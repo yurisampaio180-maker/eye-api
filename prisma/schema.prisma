@@ -1,0 +1,208 @@
+// EYE Agência — schema do banco
+// Provider: SQLite (local). Para Postgres em produção, troque `provider`
+// para "postgresql" e ajuste DATABASE_URL. (SQLite não suporta enums do
+// Prisma, então usamos String validado por Zod na API.)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Cliente {
+  id           String   @id @default(cuid())
+  nome         String
+  segmento     String   @default("")
+  status       String   @default("em_dia") // em_dia | atencao | pendente
+  corPrimaria  String   @default("#E11D2A")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  unidades     Unidade[]
+  usuarios     User[]
+  solicitacoes Solicitacao[]
+  campanhas    Campanha[]
+  eventos      EventoAgenda[]
+  dna          ClienteDNA?
+}
+
+model Unidade {
+  id        String   @id @default(cuid())
+  clienteId String
+  nome      String
+  tipo      String   @default("secretaria") // secretaria | filial | setor
+  createdAt DateTime @default(now())
+
+  cliente      Cliente       @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  usuarios     User[]
+  solicitacoes Solicitacao[]
+}
+
+model ClienteDNA {
+  id             String  @id @default(cuid())
+  clienteId      String  @unique
+  configurado    Boolean @default(false)
+  posicionamento String  @default("")
+  tomDeVoz       String  @default("")
+  paletaJson     String  @default("[]") // [{nome,hex}]
+  tipografiaJson String  @default("{}")
+  referenciasJson String @default("[]")
+  frameworksJson String  @default("[]")
+  proibicoesJson String  @default("[]")
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String   @unique
+  senhaHash String
+  role      String // ceo | cliente | social | designer | videomaker
+  clienteId String? // quando solicitante de um cliente
+  unidadeId String? // quando solicitante de uma secretaria
+  gestorCliente Boolean @default(false) // vê todas as unidades do cliente
+  avatarColor String  @default("#E11D2A")
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cliente            Cliente?        @relation(fields: [clienteId], references: [id])
+  unidade            Unidade?        @relation(fields: [unidadeId], references: [id])
+  solicitacoesCriadas Solicitacao[]  @relation("solicitante")
+  tarefas            Tarefa[]        @relation("responsavel")
+  historicos         HistoricoEvento[]
+  notificacoes       Notificacao[]
+}
+
+model Solicitacao {
+  id            String   @id @default(cuid())
+  clienteId     String
+  unidadeId     String?
+  solicitanteId String
+  tipo          String // arte | video
+  titulo        String
+  descricao     String   @default("")
+  prioridade    String   @default("normal") // baixa | normal | alta | urgente
+  prazoDesejado DateTime?
+  status        String   @default("rascunho")
+
+  // específico de ARTE
+  formato         String? // feed | stories | carrossel | outro
+  textosDesejados String?
+  informacoes     String?
+
+  // específico de VÍDEO
+  tipoVideo            String? // reels | institucional | cobertura | depoimento
+  localGravacao        String?
+  dataEvento           DateTime?
+  precisaEquipeNoLocal Boolean @default(false)
+  roteiroNecessario    Boolean @default(false)
+
+  motivoReprovacao String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  cliente     Cliente           @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  unidade     Unidade?          @relation(fields: [unidadeId], references: [id])
+  solicitante User              @relation("solicitante", fields: [solicitanteId], references: [id])
+  anexos      Anexo[]
+  tarefa      Tarefa?
+  historico   HistoricoEvento[]
+  eventos     EventoAgenda[]
+  notificacoes Notificacao[]
+}
+
+model Anexo {
+  id            String   @id @default(cuid())
+  solicitacaoId String
+  categoria     String   @default("referencia") // referencia | entrega
+  nomeArquivo   String
+  url           String
+  mime          String   @default("")
+  tamanho       Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  solicitacao Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+}
+
+model Tarefa {
+  id             String   @id @default(cuid())
+  solicitacaoId  String   @unique
+  tipo           String // arte | video
+  titulo         String
+  responsavelId  String?
+  prazoProducao  DateTime?
+  statusProducao String   @default("roteiro") // roteiro|gravacao|edicao|aprovacao|agendado (video) ; ideia|producao|aprovado|agendado|postado (arte)
+  entregaUrl     String?
+  promptSugerido String?
+  legendaSugerida String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  solicitacao Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  responsavel User?       @relation("responsavel", fields: [responsavelId], references: [id])
+}
+
+model EventoAgenda {
+  id            String   @id @default(cuid())
+  clienteId     String
+  solicitacaoId String?
+  titulo        String
+  dataHora      DateTime
+  plataforma    String?
+  tipo          String   @default("post") // post | evento
+  status        String   @default("agendado")
+  createdAt     DateTime @default(now())
+
+  cliente     Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  solicitacao Solicitacao? @relation(fields: [solicitacaoId], references: [id])
+}
+
+model Campanha {
+  id         String   @id @default(cuid())
+  clienteId  String
+  nome       String
+  plataforma String   @default("meta")
+  objetivo   String   @default("conversao")
+  verba      Float    @default(0)
+  gasto      Float    @default(0)
+  inicio     DateTime @default(now())
+  fim        DateTime?
+  status     String   @default("ativa")
+  metricsJson String  @default("{}")
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+}
+
+model Notificacao {
+  id            String   @id @default(cuid())
+  destinatarioId String?
+  clienteId     String?
+  solicitacaoId String?
+  titulo        String
+  mensagem      String   @default("")
+  canal         String   @default("interno") // interno | whatsapp | email | webhook
+  lida          Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  destinatario User?        @relation(fields: [destinatarioId], references: [id])
+  solicitacao  Solicitacao? @relation(fields: [solicitacaoId], references: [id])
+}
+
+model HistoricoEvento {
+  id            String   @id @default(cuid())
+  solicitacaoId String?
+  autorId       String?
+  acao          String
+  de            String?
+  para          String?
+  detalhe       String?
+  createdAt     DateTime @default(now())
+
+  solicitacao Solicitacao? @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  autor       User?        @relation(fields: [autorId], references: [id])
+}
