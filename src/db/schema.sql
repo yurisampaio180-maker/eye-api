@@ -169,3 +169,19 @@ CREATE INDEX IF NOT EXISTS idx_solic_status  ON Solicitacao(status);
 CREATE INDEX IF NOT EXISTS idx_unidade_cli   ON Unidade(clienteId);
 CREATE INDEX IF NOT EXISTS idx_hist_solic    ON HistoricoEvento(solicitacaoId);
 CREATE INDEX IF NOT EXISTS idx_notif_dest    ON Notificacao(destinatarioId);
+
+-- v2: rastreio de SLA por etapa
+CREATE TABLE IF NOT EXISTS TransicaoStatus (
+  id            TEXT PRIMARY KEY,
+  solicitacaoId TEXT NOT NULL REFERENCES Solicitacao(id) ON DELETE CASCADE,
+  status        TEXT NOT NULL,
+  responsavelId TEXT REFERENCES "User"(id),
+  iniciadoEm    TEXT NOT NULL,
+  finalizadoEm  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_transicao_solic ON TransicaoStatus(solicitacaoId);
+
+-- v2: agenda de vídeo com videomaker e local (idempotente via tratamento de erro no exec())
+ALTER TABLE EventoAgenda ADD COLUMN responsavelId TEXT REFERENCES "User"(id);
+ALTER TABLE EventoAgenda ADD COLUMN localEvento TEXT;

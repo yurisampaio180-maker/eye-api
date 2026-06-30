@@ -8,7 +8,7 @@ import { applySchema, exec, closeDb } from './database.ts';
  */
 await applySchema();
 
-const transacionais = ['HistoricoEvento', 'Notificacao', 'EventoAgenda', 'Anexo', 'Tarefa', 'Solicitacao', 'Campanha'];
+const transacionais = ['TransicaoStatus', 'HistoricoEvento', 'Notificacao', 'EventoAgenda', 'Anexo', 'Tarefa', 'Solicitacao', 'Campanha'];
 for (const t of transacionais) await exec(`DELETE FROM ${t};`);
 
 console.log('🧹 Reset transacional concluído. Mantidos: usuários, clientes, unidades e DNAs.');

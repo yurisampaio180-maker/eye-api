@@ -68,10 +68,19 @@ async function registrarHistorico(solicId: string, autorId: string | null, acao:
   );
 }
 
-/** muda status validando a máquina de estados + registra histórico. */
+/** muda status validando a máquina de estados + registra histórico + rastreia SLA. */
 export async function transicionar(s: SolicRow, para: SolicitacaoStatus, autorId: string | null, acao: string, detalhe?: string) {
   assertTransition(s.status as SolicitacaoStatus, para);
-  await run(`UPDATE Solicitacao SET status = ?, updatedAt = ? WHERE id = ?`, [para, nowISO(), s.id]);
+  const now = nowISO();
+  // fecha transição em andamento
+  await run(`UPDATE TransicaoStatus SET finalizadoEm = ? WHERE solicitacaoId = ? AND finalizadoEm IS NULL`, [now, s.id]);
+  // abre nova (busca responsável atual na tarefa, se já existir)
+  const tarefa = await get<{ responsavelId: string | null }>(`SELECT responsavelId FROM Tarefa WHERE solicitacaoId = ?`, [s.id]);
+  await run(
+    `INSERT INTO TransicaoStatus (id, solicitacaoId, status, responsavelId, iniciadoEm) VALUES (?,?,?,?,?)`,
+    [createId('ts'), s.id, para, tarefa?.responsavelId ?? null, now]
+  );
+  await run(`UPDATE Solicitacao SET status = ?, updatedAt = ? WHERE id = ?`, [para, now, s.id]);
   await registrarHistorico(s.id, autorId, acao, s.status, para, detalhe);
   s.status = para;
 }
@@ -87,15 +96,31 @@ export async function avancarProducao(s: SolicRow, alvo: SolicitacaoStatus, auto
 }
 
 async function enriquecer(s: SolicRow) {
-  const anexos = await all(`SELECT * FROM Anexo WHERE solicitacaoId = ? ORDER BY createdAt`, [s.id]);
-  const historico = await all(
-    `SELECT h.*, u.nome AS autorNome FROM HistoricoEvento h LEFT JOIN "User" u ON u.id = h.autorId WHERE h.solicitacaoId = ? ORDER BY h.createdAt`,
-    [s.id]
-  );
-  const cliente = await get<{ nome: string }>(`SELECT nome FROM Cliente WHERE id = ?`, [s.clienteId]);
+  const [anexos, historico, cliente, solicitante, tarefa, transicoes] = await Promise.all([
+    all(`SELECT * FROM Anexo WHERE solicitacaoId = ? ORDER BY createdAt`, [s.id]),
+    all(
+      `SELECT h.*, u.nome AS autorNome FROM HistoricoEvento h LEFT JOIN "User" u ON u.id = h.autorId WHERE h.solicitacaoId = ? ORDER BY h.createdAt`,
+      [s.id]
+    ),
+    get<{ nome: string }>(`SELECT nome FROM Cliente WHERE id = ?`, [s.clienteId]),
+    get<{ nome: string }>(`SELECT nome FROM "User" WHERE id = ?`, [s.solicitanteId]),
+    get(`SELECT * FROM Tarefa WHERE solicitacaoId = ?`, [s.id]),
+    all<{ id: string; status: string; responsavelId: string | null; iniciadoEm: string; finalizadoEm: string | null; responsavelNome: string | null }>(
+      `SELECT ts.*, u.nome AS responsavelNome FROM TransicaoStatus ts LEFT JOIN "User" u ON u.id = ts.responsavelId WHERE ts.solicitacaoId = ? ORDER BY ts.iniciadoEm`,
+      [s.id]
+    ),
+  ]);
   const unidade = s.unidadeId ? await get<{ nome: string }>(`SELECT nome FROM Unidade WHERE id = ?`, [s.unidadeId]) : null;
-  const solicitante = await get<{ nome: string }>(`SELECT nome FROM "User" WHERE id = ?`, [s.solicitanteId]);
-  const tarefa = await get(`SELECT * FROM Tarefa WHERE solicitacaoId = ?`, [s.id]);
+
+  const agora = Date.now();
+  const sla = transicoes.map((t) => ({
+    ...t,
+    duracaoMinutos: Math.floor(
+      ((t.finalizadoEm ? new Date(t.finalizadoEm).getTime() : agora) - new Date(t.iniciadoEm).getTime()) / 60000
+    ),
+    emAndamento: !t.finalizadoEm,
+  }));
+
   return {
     ...s,
     precisaEquipeNoLocal: Boolean(s.precisaEquipeNoLocal),
@@ -109,6 +134,7 @@ async function enriquecer(s: SolicRow) {
     anexos,
     historico,
     tarefa: tarefa ?? null,
+    sla,
   };
 }
 
@@ -127,8 +153,18 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
       rows = await all<SolicRow>(
         `SELECT * FROM Solicitacao WHERE tipo = 'arte' AND clienteId = 'governo-moraujo' AND status IN (${visiveis}) ORDER BY createdAt DESC`
       );
-    } else if (['social', 'videomaker'].includes(user.role)) {
+    } else if (user.role === 'social') {
       rows = await all<SolicRow>(`SELECT * FROM Solicitacao WHERE status IN (${visiveis}) ORDER BY createdAt DESC`);
+    } else if (user.role === 'videomaker') {
+      // só vê vídeos atribuídos a ele ou ainda sem atribuição
+      rows = await all<SolicRow>(
+        `SELECT s.* FROM Solicitacao s
+         LEFT JOIN Tarefa t ON t.solicitacaoId = s.id
+         WHERE s.tipo = 'video' AND s.status IN (${visiveis})
+           AND (t.responsavelId = ? OR t.responsavelId IS NULL)
+         ORDER BY s.createdAt DESC`,
+        [user.id]
+      );
     } else if (user.gestorCliente || user.role === 'gestor_cliente') {
       rows = await all<SolicRow>(`SELECT * FROM Solicitacao WHERE clienteId = ? ORDER BY createdAt DESC`, [user.clienteId]);
     } else {
@@ -198,6 +234,11 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
       ]
     );
     await registrarHistorico(id, user.id, 'criada', undefined, status);
+    // Inicia rastreio de SLA desde o status inicial
+    await run(
+      `INSERT INTO TransicaoStatus (id, solicitacaoId, status, responsavelId, iniciadoEm) VALUES (?,?,?,?,?)`,
+      [createId('ts'), id, status, null, now]
+    );
     if (status === 'em_aprovacao') {
       notificar({ titulo: 'Nova solicitação para aprovação', destinatarioId: 'ceo', solicitacaoId: id, mensagem: body.titulo });
     }
@@ -301,11 +342,26 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
 
     const dataHora = s.prazoDesejado ?? s.dataEvento ?? new Date(Date.now() + 3 * 864e5).toISOString();
     await run(
-      `INSERT INTO EventoAgenda (id, clienteId, solicitacaoId, titulo, dataHora, plataforma, tipo, status, createdAt) VALUES (?,?,?,?,?,?,?,?,?)`,
-      [createId('e'), s.clienteId, id, s.titulo, dataHora, s.tipo === 'arte' ? 'instagram' : null, s.tipo === 'arte' ? 'post' : 'evento', 'agendado', now]
+      `INSERT INTO EventoAgenda (id, clienteId, solicitacaoId, titulo, dataHora, plataforma, tipo, status, responsavelId, localEvento, createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        createId('e'), s.clienteId, id, s.titulo, dataHora,
+        s.tipo === 'arte' ? 'instagram' : null,
+        s.tipo === 'arte' ? 'post' : 'evento',
+        'agendado',
+        body.responsavelId ?? null,
+        s.tipo === 'video' ? (s.localGravacao ?? null) : null,
+        now,
+      ]
     );
 
-    if (body.responsavelId) notificar({ titulo: 'Nova tarefa atribuída', destinatarioId: body.responsavelId, solicitacaoId: id, mensagem: s.titulo });
+    if (body.responsavelId) {
+      notificar({ titulo: 'Nova tarefa atribuída', destinatarioId: body.responsavelId, solicitacaoId: id, mensagem: s.titulo });
+      if (s.tipo === 'video' && s.dataEvento) {
+        const dataStr = new Date(s.dataEvento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const localStr = s.localGravacao ? ` · ${s.localGravacao}` : '';
+        notificar({ titulo: `Filmagem agendada: ${dataStr}${s.horaEvento ? ' às ' + s.horaEvento : ''}${localStr}`, destinatarioId: body.responsavelId, solicitacaoId: id, mensagem: s.titulo });
+      }
+    }
     notificar({ titulo: 'Sua solicitação foi aprovada ✅', destinatarioId: s.solicitanteId, clienteId: s.clienteId, solicitacaoId: id, mensagem: s.titulo });
 
     return enriquecer(await getSolic(id));

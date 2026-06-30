@@ -65,6 +65,8 @@ const CAMEL = [
   'legendaSugerida', 'dataHora', 'imagemUrl', 'criadoPorId', 'postarPorId', 'metricsJson', 'destinatarioId',
   'autorId', 'autorNome', 'clienteNome', 'unidadeNome', 'solicitanteNome', 'responsavelNome', 'responsavelCor',
   'criadoPorNome', 'postarPorNome',
+  // v2
+  'localEvento', 'iniciadoEm', 'finalizadoEm',
 ];
 const LC2CAMEL: Record<string, string> = Object.fromEntries(CAMEL.map((c) => [c.toLowerCase(), c]));
 
@@ -135,8 +137,8 @@ export async function exec(sql: string): Promise<void> {
         await pool.query(stmt);
       } catch (e: any) {
         const msg = String(e?.message);
-        // ignora "já existe" (idempotência) e falhas de índice (otimização, não crítico)
-        if (/already exists|exist/i.test(msg) || /^\s*CREATE\s+INDEX/i.test(stmt)) continue;
+        // ignora "já existe" e "duplicate column" (idempotência) e falhas de índice
+        if (/already exists|duplicate column/i.test(msg) || /^\s*CREATE\s+INDEX/i.test(stmt)) continue;
         throw e;
       }
     }

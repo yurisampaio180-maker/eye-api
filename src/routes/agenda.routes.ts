@@ -8,6 +8,7 @@ import { notificar } from '../services/notificacoes.ts';
 interface EventoRow {
   id: string;
   clienteId: string;
+  solicitacaoId: string | null;
   titulo: string;
   dataHora: string;
   plataforma: string | null;
@@ -18,14 +19,26 @@ interface EventoRow {
   hashtags: string;
   criadoPorId: string | null;
   postarPorId: string | null;
+  responsavelId: string | null;
+  localEvento: string | null;
 }
 
 async function enriquecer(e: EventoRow) {
-  const cliente = await get<{ nome: string }>(`SELECT nome FROM Cliente WHERE id = ?`, [e.clienteId]);
-  const criador = e.criadoPorId ? await get<{ nome: string }>(`SELECT nome FROM "User" WHERE id = ?`, [e.criadoPorId]) : null;
-  const postador = e.postarPorId ? await get<{ nome: string }>(`SELECT nome FROM "User" WHERE id = ?`, [e.postarPorId]) : null;
+  const [cliente, criador, postador, responsavel] = await Promise.all([
+    get<{ nome: string }>(`SELECT nome FROM Cliente WHERE id = ?`, [e.clienteId]),
+    e.criadoPorId ? get<{ nome: string }>(`SELECT nome FROM "User" WHERE id = ?`, [e.criadoPorId]) : null,
+    e.postarPorId ? get<{ nome: string }>(`SELECT nome FROM "User" WHERE id = ?`, [e.postarPorId]) : null,
+    e.responsavelId ? get<{ nome: string }>(`SELECT nome FROM "User" WHERE id = ?`, [e.responsavelId]) : null,
+  ]);
   const atrasado = e.status !== 'postado' && new Date(e.dataHora) < new Date() && e.status !== 'rascunho';
-  return { ...e, clienteNome: cliente?.nome ?? null, criadoPorNome: criador?.nome ?? null, postarPorNome: postador?.nome ?? null, atrasado };
+  return {
+    ...e,
+    clienteNome: cliente?.nome ?? null,
+    criadoPorNome: criador?.nome ?? null,
+    postarPorNome: postador?.nome ?? null,
+    responsavelNome: responsavel?.nome ?? null,
+    atrasado,
+  };
 }
 
 const byId = (id: string) => get<EventoRow>(`SELECT * FROM EventoAgenda WHERE id = ?`, [id]);
@@ -37,8 +50,14 @@ export async function agendaRoutes(app: FastifyInstance) {
     const user = req.authUser;
     const { clienteId } = z.object({ clienteId: z.string().optional() }).parse(req.query);
     let rows: EventoRow[];
-    if (user.role === 'ceo' || user.role === 'social' || user.role === 'videomaker') {
+    if (user.role === 'ceo' || user.role === 'social') {
       rows = await all<EventoRow>(`SELECT * FROM EventoAgenda ${clienteId ? 'WHERE clienteId = ?' : ''} ORDER BY dataHora`, clienteId ? [clienteId] : []);
+    } else if (user.role === 'videomaker') {
+      // videomaker só vê filmagens (tipo=evento) atribuídas a ele
+      rows = await all<EventoRow>(
+        `SELECT * FROM EventoAgenda WHERE tipo = 'evento' AND responsavelId = ? ORDER BY dataHora`,
+        [user.id]
+      );
     } else if (user.role === 'designer_governo') {
       rows = await all<EventoRow>(`SELECT * FROM EventoAgenda WHERE clienteId = 'governo-moraujo' ORDER BY dataHora`);
     } else {
