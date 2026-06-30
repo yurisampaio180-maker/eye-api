@@ -3,7 +3,7 @@ import jwt from '@fastify/jwt';
 import { env } from '../env.ts';
 import { unauthorized, forbidden } from '../lib/errors.ts';
 
-export type Role = 'ceo' | 'cliente' | 'social' | 'designer_governo' | 'videomaker';
+export type Role = 'ceo' | 'cliente' | 'gestor_cliente' | 'social' | 'designer_governo' | 'videomaker';
 
 export interface AuthUser {
   id: string;

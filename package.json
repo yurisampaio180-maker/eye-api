@@ -11,6 +11,7 @@
     "db:seed": "node --experimental-strip-types --experimental-sqlite src/db/seed.ts",
     "db:reset": "node --experimental-strip-types --experimental-sqlite src/db/seed.ts --reset",
     "db:reset-transacional": "node --experimental-strip-types --experimental-sqlite src/db/reset-transacional.ts",
+    "db:seed-prod": "node --experimental-strip-types --experimental-sqlite src/db/seed-prod.ts",
     "test:smoke": "node --experimental-strip-types --experimental-sqlite scripts/smoke.ts",
     "test:pg": "node --experimental-strip-types scripts/smoke-pg.ts",
     "typecheck": "tsc --noEmit"

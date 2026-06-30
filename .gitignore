@@ -10,3 +10,4 @@ data/
 uploads/*
 !uploads/.gitkeep
 *.log
+credenciais-iniciais.txt

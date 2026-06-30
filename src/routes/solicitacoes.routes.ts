@@ -55,7 +55,8 @@ export function assertPodeVer(user: AuthUser, s: SolicRow) {
     return;
   }
   if (s.clienteId !== user.clienteId) throw forbidden('Sem acesso a este cliente.');
-  if (user.gestorCliente) return;
+  // gestor do cliente (ex.: Prefeito) vê todas as secretarias do seu cliente
+  if (user.gestorCliente || user.role === 'gestor_cliente') return;
   const ehMinha = s.solicitanteId === user.id || (s.unidadeId && s.unidadeId === user.unidadeId);
   if (!ehMinha) throw forbidden('Você só vê as solicitações da sua unidade.');
 }
@@ -128,7 +129,7 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
       );
     } else if (['social', 'videomaker'].includes(user.role)) {
       rows = await all<SolicRow>(`SELECT * FROM Solicitacao WHERE status IN (${visiveis}) ORDER BY createdAt DESC`);
-    } else if (user.gestorCliente) {
+    } else if (user.gestorCliente || user.role === 'gestor_cliente') {
       rows = await all<SolicRow>(`SELECT * FROM Solicitacao WHERE clienteId = ? ORDER BY createdAt DESC`, [user.clienteId]);
     } else {
       rows = await all<SolicRow>(
