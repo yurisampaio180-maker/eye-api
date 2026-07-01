@@ -59,13 +59,15 @@ export async function iaRoutes(app: FastifyInstance) {
         throw badRequest('promptTecnico ausente ou muito curto.');
       }
 
-      // Chamar OpenAI (pode levar 10-30s)
+      // Chamar OpenAI (pode levar 10-30s) — erros já mapeados em openai.errors.ts
+      req.log.info({ clienteId, formato, temReferencia: !!referenciaBuffer }, 'ia:gerar-imagem inicio');
       const resultado = await gerarImagem({
         promptTecnico,
         formato,
         referenciaBuffer,
         referenciaMime,
       });
+      req.log.info({ clienteId }, 'ia:gerar-imagem concluido');
 
       // Salvar em /uploads/geradas/ para retornar URL permanente
       const geradasDir = join(process.cwd(), env.UPLOAD_DIR, 'geradas');

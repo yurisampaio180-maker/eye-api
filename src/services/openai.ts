@@ -1,5 +1,6 @@
 import OpenAI, { toFile } from 'openai';
 import { env } from '../env.ts';
+import { mapOpenAIError } from '../errors/openai.errors.ts';
 
 export const openaiConfigured = Boolean(env.OPENAI_API_KEY);
 
@@ -35,32 +36,34 @@ export async function gerarImagem(opts: {
     'Photorealistic where photography is used. Ultra-high detail. Commercial photography and graphic design hybrid quality.',
   ].join('\n\n');
 
-  if (opts.referenciaBuffer) {
-    // Edição com imagem de referência (gpt-image-1 suporta image input)
-    const imagemFile = await toFile(opts.referenciaBuffer, 'referencia.webp', {
-      type: opts.referenciaMime ?? 'image/webp',
-    });
-    const res = await (openai.images as any).edit({
+  try {
+    if (opts.referenciaBuffer) {
+      const imagemFile = await toFile(opts.referenciaBuffer, 'referencia.webp', {
+        type: opts.referenciaMime ?? 'image/webp',
+      });
+      const res = await (openai.images as any).edit({
+        model: 'gpt-image-1',
+        image: imagemFile,
+        prompt: promptFinal,
+        size,
+        quality: 'high',
+        n: 1,
+      });
+      return { b64: res.data[0].b64_json as string };
+    }
+
+    const res = await (openai.images as any).generate({
       model: 'gpt-image-1',
-      image: imagemFile,
       prompt: promptFinal,
       size,
       quality: 'high',
       n: 1,
+      output_format: 'webp',
     });
     return { b64: res.data[0].b64_json as string };
+  } catch (err: any) {
+    throw mapOpenAIError(err);
   }
-
-  // Geração pura
-  const res = await (openai.images as any).generate({
-    model: 'gpt-image-1',
-    prompt: promptFinal,
-    size,
-    quality: 'high',
-    n: 1,
-    output_format: 'webp',
-  });
-  return { b64: res.data[0].b64_json as string };
 }
 
 // ─── Helpers determinísticos (usados pelo backend para pré-montar prompts) ──
