@@ -1,11 +1,69 @@
+import OpenAI, { toFile } from 'openai';
 import { env } from '../env.ts';
 
-/**
- * Integração OpenAI isolada (placeholder). Quando aprovamos uma solicitação,
- * o backend já pré-monta sugestões usando o DNA do cliente. Sem OPENAI_API_KEY,
- * devolve um mock plausível; com a chave, aqui entraria a chamada real.
- */
-const hasKey = Boolean(env.OPENAI_API_KEY);
+export const openaiConfigured = Boolean(env.OPENAI_API_KEY);
+
+// Cliente lazy: criado apenas se a chave existir
+const openai = openaiConfigured
+  ? new OpenAI({ apiKey: env.OPENAI_API_KEY, timeout: 90_000 })
+  : null;
+
+// ─── Mapeamento de formato → tamanho ────────────────────────────────────────
+
+const SIZES: Record<string, '1024x1024' | '1024x1792'> = {
+  feed: '1024x1024',
+  stories: '1024x1792',
+  carrossel_slide: '1024x1024',
+};
+
+// ─── Geração real de imagem ─────────────────────────────────────────────────
+
+export async function gerarImagem(opts: {
+  promptTecnico: string;
+  formato: string;
+  referenciaBuffer?: Buffer;
+  referenciaMime?: string;
+}): Promise<{ b64: string }> {
+  if (!openai) throw new Error('OPENAI_API_KEY não configurada no servidor.');
+
+  const size = SIZES[opts.formato] ?? '1024x1024';
+
+  // Prefixo e sufixo de qualidade profissional — encapsulam o prompt técnico
+  const promptFinal = [
+    'Professional marketing design, advertising agency quality, Instagram-ready, brand-consistent.',
+    opts.promptTecnico,
+    'Photorealistic where photography is used. Ultra-high detail. Commercial photography and graphic design hybrid quality.',
+  ].join('\n\n');
+
+  if (opts.referenciaBuffer) {
+    // Edição com imagem de referência (gpt-image-1 suporta image input)
+    const imagemFile = await toFile(opts.referenciaBuffer, 'referencia.webp', {
+      type: opts.referenciaMime ?? 'image/webp',
+    });
+    const res = await (openai.images as any).edit({
+      model: 'gpt-image-1',
+      image: imagemFile,
+      prompt: promptFinal,
+      size,
+      quality: 'high',
+      n: 1,
+    });
+    return { b64: res.data[0].b64_json as string };
+  }
+
+  // Geração pura
+  const res = await (openai.images as any).generate({
+    model: 'gpt-image-1',
+    prompt: promptFinal,
+    size,
+    quality: 'high',
+    n: 1,
+    output_format: 'webp',
+  });
+  return { b64: res.data[0].b64_json as string };
+}
+
+// ─── Helpers determinísticos (usados pelo backend para pré-montar prompts) ──
 
 interface DNALike {
   posicionamento?: string;
@@ -24,7 +82,7 @@ export function sugerirPromptArte(opts: {
   const paleta = opts.dna?.paleta?.map((p) => `${p.nome} ${p.hex}`).join(', ') || 'paleta da marca';
   const refs = opts.dna?.referencias?.join('; ') || 'referências da marca';
   return [
-    `PROMPT DALL·E 3 — ${opts.clienteNome} (${opts.formato ?? 'feed'})`,
+    `PROMPT — ${opts.clienteNome} (${opts.formato ?? 'feed'})`,
     `① 1080×1440px (4:5). ② Brand: ${opts.clienteNome}. Palette: ${paleta}. References: ${refs}.`,
     `③ Scene: ${opts.briefing || 'arte para o feed'}. ④ Cinematic key + rim light.`,
     `⑤ Typography: DOMINANT headline "${(opts.textos || opts.briefing || 'DESTAQUE').toUpperCase()}".`,
@@ -47,5 +105,3 @@ export function sugerirRoteiro(opts: { clienteNome: string; tema: string; tipoVi
     estimatedDuration: '30s',
   };
 }
-
-export const openaiConfigured = hasKey;

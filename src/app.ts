@@ -16,6 +16,7 @@ import { tarefasRoutes } from './routes/tarefas.routes.ts';
 import { miscRoutes } from './routes/misc.routes.ts';
 import { usersRoutes } from './routes/users.routes.ts';
 import { agendaRoutes } from './routes/agenda.routes.ts';
+import { iaRoutes } from './routes/ia.routes.ts';
 
 export async function buildApp(opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
   await applySchema();
@@ -47,6 +48,7 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   await app.register(tarefasRoutes, { prefix: '/api/v1/tarefas' });
   await app.register(usersRoutes, { prefix: '/api/v1/users' });
   await app.register(agendaRoutes, { prefix: '/api/v1/agenda' });
+  await app.register(iaRoutes, { prefix: '/api/v1/ia' });
   await app.register(miscRoutes, { prefix: '/api/v1' });
 
   return app;
