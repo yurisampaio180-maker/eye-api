@@ -11,9 +11,9 @@ const openai = openaiConfigured
 
 // ─── Mapeamento de formato → tamanho ────────────────────────────────────────
 
-const SIZES: Record<string, '1024x1024' | '1024x1792'> = {
+const SIZES: Record<string, '1024x1024' | '1024x1536' | '1536x1024'> = {
   feed: '1024x1024',
-  stories: '1024x1792',
+  stories: '1024x1536',
   carrossel_slide: '1024x1024',
 };
 
