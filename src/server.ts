@@ -2,6 +2,7 @@ import { buildApp } from './app.ts';
 import { env } from './env.ts';
 import { get, driver } from './db/database.ts';
 import { seedDatabase } from './db/seed.ts';
+import { sincronizarTodos, instagramConfigured } from './services/instagram.ts';
 
 const app = await buildApp({ logger: true });
 
@@ -26,6 +27,14 @@ app
   .listen({ port: env.PORT, host })
   .then(() => {
     console.log(`🚀 EYE API (${driver}) em http://${host}:${env.PORT}  (CORS: ${env.CORS_ORIGIN})`);
+
+    // Sincronização Instagram a cada 6 horas (apenas se configurado)
+    if (instagramConfigured) {
+      const SEIS_HORAS = 6 * 60 * 60 * 1000;
+      setInterval(() => {
+        sincronizarTodos().catch((e) => app.log.error(e, 'instagram:sync-cron erro'));
+      }, SEIS_HORAS);
+    }
   })
   .catch((e) => {
     app.log.error(e);

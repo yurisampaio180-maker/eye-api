@@ -67,6 +67,9 @@ const CAMEL = [
   'criadoPorNome', 'postarPorNome',
   // v2
   'localEvento', 'iniciadoEm', 'finalizadoEm',
+  // v3 instagram
+  'instagramUserId', 'tokenExpiraEm', 'conectadoEm', 'ultimaSincEm',
+  'coletadoEm', 'alcanceSemana', 'impressoesSem', 'visitasPerfil', 'totalPosts',
 ];
 const LC2CAMEL: Record<string, string> = Object.fromEntries(CAMEL.map((c) => [c.toLowerCase(), c]));
 

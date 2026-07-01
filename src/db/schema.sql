@@ -185,3 +185,29 @@ CREATE INDEX IF NOT EXISTS idx_transicao_solic ON TransicaoStatus(solicitacaoId)
 -- v2: agenda de vídeo com videomaker e local (idempotente via tratamento de erro no exec())
 ALTER TABLE EventoAgenda ADD COLUMN responsavelId TEXT REFERENCES "User"(id);
 ALTER TABLE EventoAgenda ADD COLUMN localEvento TEXT;
+
+-- v3: integração com Instagram Graph API
+CREATE TABLE IF NOT EXISTS InstagramConexao (
+  id              TEXT PRIMARY KEY,
+  clienteId       TEXT NOT NULL UNIQUE REFERENCES Cliente(id) ON DELETE CASCADE,
+  instagramUserId TEXT NOT NULL,
+  username        TEXT NOT NULL,
+  accessToken     TEXT NOT NULL,
+  tokenExpiraEm   TEXT NOT NULL,
+  conectadoEm     TEXT NOT NULL,
+  ultimaSincEm    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS InstagramMetrica (
+  id            TEXT PRIMARY KEY,
+  clienteId     TEXT NOT NULL REFERENCES Cliente(id) ON DELETE CASCADE,
+  coletadoEm    TEXT NOT NULL,
+  seguidores    INTEGER NOT NULL DEFAULT 0,
+  seguindo      INTEGER NOT NULL DEFAULT 0,
+  totalPosts    INTEGER NOT NULL DEFAULT 0,
+  alcanceSemana INTEGER,
+  impressoesSem INTEGER,
+  visitasPerfil INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_igmetrica_cliente ON InstagramMetrica(clienteId, coletadoEm);

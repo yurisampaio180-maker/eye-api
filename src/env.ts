@@ -12,6 +12,10 @@ const schema = z.object({
   UPLOAD_DIR: z.string().default('./uploads'),
   OPENAI_API_KEY: z.string().optional().default(''),
   SEED_DEFAULT_PASSWORD: z.string().default('eye123'),
+  META_APP_ID: z.string().optional().default(''),
+  META_APP_SECRET: z.string().optional().default(''),
+  INSTAGRAM_REDIRECT_URI: z.string().optional().default(''),
+  FRONTEND_URL: z.string().optional().default('http://localhost:5190'),
 });
 
 const parsed = schema.safeParse(process.env);
