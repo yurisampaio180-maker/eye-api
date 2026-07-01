@@ -21,6 +21,11 @@ interface EventoRow {
   postarPorId: string | null;
   responsavelId: string | null;
   localEvento: string | null;
+  geradoPorIA: number;
+  roteiro: string | null;
+  justificativa: string | null;
+  formato: string | null;
+  objetivo: string | null;
 }
 
 async function enriquecer(e: EventoRow) {

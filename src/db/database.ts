@@ -70,6 +70,8 @@ const CAMEL = [
   // v3 instagram
   'instagramUserId', 'tokenExpiraEm', 'conectadoEm', 'ultimaSincEm',
   'coletadoEm', 'alcanceSemana', 'impressoesSem', 'visitasPerfil', 'totalPosts',
+  // v4 motor
+  'geradoPorIA', 'totalItens', 'itensGerados', 'concluidoEm',
 ];
 const LC2CAMEL: Record<string, string> = Object.fromEntries(CAMEL.map((c) => [c.toLowerCase(), c]));
 

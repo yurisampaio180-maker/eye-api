@@ -211,3 +211,24 @@ CREATE TABLE IF NOT EXISTS InstagramMetrica (
 );
 
 CREATE INDEX IF NOT EXISTS idx_igmetrica_cliente ON InstagramMetrica(clienteId, coletadoEm);
+
+-- v4: Motor de Marketing Autônomo
+ALTER TABLE EventoAgenda ADD COLUMN roteiro TEXT;
+ALTER TABLE EventoAgenda ADD COLUMN geradoPorIA INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE EventoAgenda ADD COLUMN justificativa TEXT;
+ALTER TABLE EventoAgenda ADD COLUMN formato TEXT;
+ALTER TABLE EventoAgenda ADD COLUMN objetivo TEXT;
+
+CREATE TABLE IF NOT EXISTS GeracaoMarketing (
+  id           TEXT PRIMARY KEY,
+  clienteId    TEXT NOT NULL REFERENCES Cliente(id) ON DELETE CASCADE,
+  mes          TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'processando',
+  totalItens   INTEGER NOT NULL DEFAULT 0,
+  itensGerados INTEGER NOT NULL DEFAULT 0,
+  erros        INTEGER NOT NULL DEFAULT 0,
+  iniciadoEm   TEXT NOT NULL,
+  concluidoEm  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_geracao_cli ON GeracaoMarketing(clienteId);

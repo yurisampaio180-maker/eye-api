@@ -3,6 +3,7 @@ import { env } from './env.ts';
 import { get, driver } from './db/database.ts';
 import { seedDatabase } from './db/seed.ts';
 import { sincronizarTodos, instagramConfigured } from './services/instagram.ts';
+import { executarTodosOsClientes } from './services/marketing-engine.service.ts';
 
 const app = await buildApp({ logger: true });
 
@@ -35,6 +36,15 @@ app
         sincronizarTodos().catch((e) => app.log.error(e, 'instagram:sync-cron erro'));
       }, SEIS_HORAS);
     }
+
+    // Motor de marketing: verifica a cada hora se é dia 25, 09h → gera plano do mês seguinte
+    setInterval(() => {
+      const agora = new Date();
+      if (agora.getDate() === 25 && agora.getHours() === 9 && agora.getMinutes() < 60) {
+        app.log.info('[motor:cron] dia 25 às 09h — iniciando geração mensal para todos os clientes');
+        executarTodosOsClientes().catch((e: any) => app.log.error(e, '[motor:cron] erro'));
+      }
+    }, 60 * 60 * 1000);
   })
   .catch((e) => {
     app.log.error(e);
