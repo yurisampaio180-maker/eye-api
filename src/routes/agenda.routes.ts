@@ -4,6 +4,9 @@ import { all, get, run, nowISO } from '../db/database.ts';
 import { createId } from '../lib/id.ts';
 import { notFound, badRequest } from '../lib/errors.ts';
 import { notificar } from '../services/notificacoes.ts';
+import { gerarImagem } from '../services/openai.ts';
+import { montarPromptProfissional, type DNAInput } from '../services/art-prompt-builder.ts';
+import { salvarImagemGerada } from '../services/supabase-storage.ts';
 
 interface EventoRow {
   id: string;
@@ -159,5 +162,50 @@ export async function agendaRoutes(app: FastifyInstance) {
     if (!ev) throw notFound('Post não encontrado.');
     await run(`DELETE FROM EventoAgenda WHERE id = ?`, [id]);
     return reply.code(204).send();
+  });
+
+  app.post('/:id/regenerar-imagem', { preHandler: app.authorize('ceo') }, async (req) => {
+    const { id } = req.params as { id: string };
+    const ev = await byId(id);
+    if (!ev) throw notFound('Post não encontrado.');
+    if (ev.tipo === 'video') throw badRequest('Posts de vídeo não têm imagem gerada por IA.');
+
+    const dnaRow = await get<any>(`SELECT * FROM ClienteDNA WHERE clienteId = ?`, [ev.clienteId]);
+    const clienteRow = await get<{ nome: string; segmento: string }>(
+      `SELECT nome, segmento FROM Cliente WHERE id = ?`,
+      [ev.clienteId],
+    );
+
+    const dna: DNAInput = {
+      nome: clienteRow?.nome ?? ev.clienteId,
+      posicionamento: dnaRow?.posicionamento ?? '',
+      tomDeVoz: dnaRow?.tomDeVoz ?? '',
+      paleta: JSON.parse(dnaRow?.paletaJson ?? '[]'),
+      tipografia: JSON.parse(dnaRow?.tipografiaJson ?? '{}'),
+      referencias: JSON.parse(dnaRow?.referenciasJson ?? '[]'),
+      proibicoes: JSON.parse(dnaRow?.proibicoesJson ?? '[]'),
+    };
+
+    const item = {
+      titulo: ev.titulo,
+      copyHook: ev.titulo,
+      descricaoBrief: ev.justificativa ?? ev.titulo,
+      objetivo: (ev.objetivo ?? 'engajar') as any,
+      formato: (ev.formato ?? 'feed') as any,
+      copyLegenda: ev.legenda,
+      hashtags: ev.hashtags.split(' ').filter(Boolean),
+      plataforma: ev.plataforma ?? 'instagram',
+      dia: new Date(ev.dataHora).getDate(),
+      horario: '11:00',
+      tipo: 'arte' as const,
+      justificativa: ev.justificativa ?? '',
+    };
+
+    const { promptFinal } = montarPromptProfissional({ item, dna });
+    const { b64 } = await gerarImagem({ promptTecnico: promptFinal, formato: item.formato });
+    const imagemUrl = await salvarImagemGerada(b64, ev.clienteId);
+
+    await run(`UPDATE EventoAgenda SET imagemUrl = ? WHERE id = ?`, [imagemUrl, id]);
+    return enriquecer((await byId(id))!);
   });
 }

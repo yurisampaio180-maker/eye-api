@@ -15,14 +15,11 @@ function getClient() {
   return _client;
 }
 
-const supabaseConfigured = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY);
-
 /**
- * Salva uma imagem WebP gerada por IA.
- * - Produção (Render): envia para Supabase Storage (permanente) e devolve URL absoluta.
- * - Dev local: salva em disco e devolve path relativo (/uploads/geradas/...).
- *
- * O frontend deve usar `resolveImageUrl()` para lidar com ambos os formatos.
+ * Salva uma imagem WebP gerada por IA com três níveis de fallback:
+ *   1. Supabase Storage (produção) → URL absoluta permanente
+ *   2. Disco local (dev sem Supabase) → path relativo /uploads/geradas/...
+ *   3. data URL base64 (Supabase configurado mas falhou) → funciona sem storage externo
  */
 export async function salvarImagemGerada(
   b64: string,
@@ -31,22 +28,31 @@ export async function salvarImagemGerada(
   const filename = `${createId('img')}.webp`;
   const buffer = Buffer.from(b64, 'base64');
 
-  if (supabaseConfigured) {
-    const path = clienteId ? `geradas/${clienteId}/${filename}` : `geradas/${filename}`;
-    const sb = getClient();
+  // Nível 1: Supabase (produção)
+  if (env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY) {
+    try {
+      const path = clienteId ? `geradas/${clienteId}/${filename}` : `geradas/${filename}`;
+      const sb = getClient();
 
-    const { error } = await sb.storage.from(BUCKET).upload(path, buffer, {
-      contentType: 'image/webp',
-      cacheControl: '31536000',
-      upsert: false,
-    });
+      const { error } = await sb.storage.from(BUCKET).upload(path, buffer, {
+        contentType: 'image/webp',
+        cacheControl: '31536000',
+        upsert: false,
+      });
 
-    if (error) throw new Error(`Supabase Storage: ${error.message}`);
+      if (!error) {
+        return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+      }
+      console.warn('[storage] Supabase upload falhou, usando base64:', error.message);
+    } catch (err: any) {
+      console.warn('[storage] Supabase indisponível, usando base64:', err.message);
+    }
 
-    return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+    // Nível 3: data URL (Supabase configurado mas com erro)
+    return `data:image/webp;base64,${b64}`;
   }
 
-  // Fallback local (dev sem Supabase)
+  // Nível 2: disco local (dev sem Supabase)
   const dir = join(process.cwd(), env.UPLOAD_DIR, 'geradas');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, filename), buffer);
