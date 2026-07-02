@@ -144,8 +144,20 @@ export async function agendaRoutes(app: FastifyInstance) {
     return enriquecer((await byId(id))!);
   });
 
-  app.get('/pendentes', { preHandler: app.authorize('ceo', 'social') }, async () => {
-    const rows = await all<EventoRow>(`SELECT * FROM EventoAgenda WHERE status = 'aguardando_confirmacao' ORDER BY dataHora`);
+  app.get('/pendentes', { preHandler: app.authorize('ceo', 'social') }, async (req) => {
+    const { clienteId } = z.object({ clienteId: z.string().optional() }).parse(req.query);
+    const rows = await all<EventoRow>(
+      `SELECT * FROM EventoAgenda WHERE status = 'aguardando_confirmacao'${clienteId ? ' AND clienteId = ?' : ''} ORDER BY dataHora`,
+      clienteId ? [clienteId] : []
+    );
     return Promise.all(rows.map(enriquecer));
+  });
+
+  app.delete('/:id', { preHandler: app.authorize('ceo') }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const ev = await byId(id);
+    if (!ev) throw notFound('Post não encontrado.');
+    await run(`DELETE FROM EventoAgenda WHERE id = ?`, [id]);
+    return reply.code(204).send();
   });
 }

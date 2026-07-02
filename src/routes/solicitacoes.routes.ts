@@ -212,6 +212,9 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
 
   app.post('/', { preHandler: app.authorize('cliente', 'ceo', 'social') }, async (req, reply) => {
     const body = createBody.parse(req.body);
+    if (body.tipo === 'video' && (!body.dataEvento || !body.horaEvento)) {
+      throw badRequest('Para solicitações de vídeo, informe a data e o horário do evento.');
+    }
     const user = req.authUser;
     const clienteId = user.role === 'ceo' || user.role === 'social' ? (req.body as any).clienteId : user.clienteId;
     if (!clienteId) throw badRequest('Informe o cliente da solicitação.');
