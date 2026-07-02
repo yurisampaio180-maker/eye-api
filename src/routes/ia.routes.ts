@@ -1,9 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { env } from '../env.ts';
 import { gerarImagem, openaiConfigured } from '../services/openai.ts';
-import { createId } from '../lib/id.ts';
+import { salvarImagemGerada } from '../services/supabase-storage.ts';
 import { badRequest } from '../lib/errors.ts';
 
 export async function iaRoutes(app: FastifyInstance) {
@@ -69,15 +66,11 @@ export async function iaRoutes(app: FastifyInstance) {
       });
       req.log.info({ clienteId }, 'ia:gerar-imagem concluido');
 
-      // Salvar em /uploads/geradas/ para retornar URL permanente
-      const geradasDir = join(process.cwd(), env.UPLOAD_DIR, 'geradas');
-      await mkdir(geradasDir, { recursive: true });
-      const filename = `${createId('img')}.webp`;
-      await writeFile(join(geradasDir, filename), Buffer.from(resultado.b64, 'base64'));
+      const imagemUrl = await salvarImagemGerada(resultado.b64, clienteId || undefined);
 
       reply.code(201);
       return {
-        imagemUrl: `/uploads/geradas/${filename}`,
+        imagemUrl,
         modeloUsado: 'gpt-image-1',
         geradoEm: new Date().toISOString(),
         clienteId,

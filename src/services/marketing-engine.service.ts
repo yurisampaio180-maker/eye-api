@@ -1,13 +1,11 @@
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { all, get, run, nowISO } from '../db/database.ts';
 import { createId } from '../lib/id.ts';
-import { env } from '../env.ts';
 import { buscarTendencias } from './trend.service.ts';
 import { gerarPlanoMensal } from './strategy.service.ts';
 import { montarPromptProfissional, type DNAInput } from './art-prompt-builder.ts';
 import { gerarImagem } from './openai.ts';
 import { gerarRoteiro } from './script.service.ts';
+import { salvarImagemGerada } from './supabase-storage.ts';
 
 export interface GeracaoMarketing {
   id: string;
@@ -27,13 +25,6 @@ function proxMes(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function salvarImagem(b64: string, imageId: string): string {
-  const dir = join(process.cwd(), env.UPLOAD_DIR, 'geradas');
-  mkdirSync(dir, { recursive: true });
-  const filename = `${imageId}.webp`;
-  writeFileSync(join(dir, filename), Buffer.from(b64, 'base64'));
-  return `/uploads/geradas/${filename}`;
-}
 
 export async function iniciarGeracao(clienteId: string, mes?: string): Promise<string> {
   const mesAlvo = mes ?? proxMes();
@@ -95,7 +86,7 @@ export async function executarGeracaoCompleta(clienteId: string, geracaoId: stri
           try {
             const { promptFinal } = montarPromptProfissional({ item, dna });
             const { b64 } = await gerarImagem({ promptTecnico: promptFinal, formato: item.formato });
-            imagemUrl = salvarImagem(b64, createId('img'));
+            imagemUrl = await salvarImagemGerada(b64, clienteId);
           } catch (e: any) {
             console.warn(`[motor] arte falhou para "${item.titulo}": ${e.message}`);
           }

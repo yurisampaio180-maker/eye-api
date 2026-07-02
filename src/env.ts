@@ -17,6 +17,8 @@ const schema = z.object({
   INSTAGRAM_REDIRECT_URI: z.string().optional().default(''),
   FRONTEND_URL: z.string().optional().default('http://localhost:5190'),
   TAVILY_API_KEY: z.string().optional().default(''),
+  SUPABASE_URL: z.string().optional().default(''),
+  SUPABASE_SERVICE_KEY: z.string().optional().default(''),
 });
 
 const parsed = schema.safeParse(process.env);
