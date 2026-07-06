@@ -37,11 +37,12 @@ app
       }, SEIS_HORAS);
     }
 
-    // Motor de marketing: verifica a cada hora se é dia 25, 09h → gera plano do mês seguinte
+    // Motor de marketing: verifica a cada hora se é dia 25, 09h (Fortaleza) → gera plano do mês seguinte
+    // Usa TZ explícito para blindar contra servidor sem TZ=America/Fortaleza configurado
     setInterval(() => {
-      const agora = new Date();
-      if (agora.getDate() === 25 && agora.getHours() === 9 && agora.getMinutes() < 60) {
-        app.log.info('[motor:cron] dia 25 às 09h — iniciando geração mensal para todos os clientes');
+      const agoraBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Fortaleza' }));
+      if (agoraBRT.getDate() === 25 && agoraBRT.getHours() === 9 && agoraBRT.getMinutes() < 60) {
+        app.log.info('[motor:cron] dia 25 às 09h BRT — iniciando geração mensal para todos os clientes');
         executarTodosOsClientes().catch((e: any) => app.log.error(e, '[motor:cron] erro'));
       }
     }, 60 * 60 * 1000);
