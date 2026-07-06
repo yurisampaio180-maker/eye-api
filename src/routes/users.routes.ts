@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { all, get, run, nowISO } from '../db/database.ts';
 import { createId } from '../lib/id.ts';
 import { hashPassword } from '../auth/password.ts';
-import { badRequest, conflict } from '../lib/errors.ts';
+import { badRequest, conflict, notFound } from '../lib/errors.ts';
 
-const ROLES = ['ceo', 'social', 'designer_governo', 'videomaker', 'cliente'] as const;
+const ROLES = ['ceo', 'social', 'designer_governo', 'videomaker', 'gestor_cliente', 'cliente'] as const;
 
 export async function usersRoutes(app: FastifyInstance) {
   app.addHook('preHandler', app.authenticate);
@@ -59,6 +59,20 @@ export async function usersRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const body = z.object({ ativo: z.boolean() }).parse(req.body);
     await run(`UPDATE "User" SET ativo = ?, updatedAt = ? WHERE id = ?`, [body.ativo ? 1 : 0, nowISO(), id]);
+    return { ok: true };
+  });
+
+  // ALTERAR PAPEL (só CEO, com proteção de último CEO)
+  app.patch('/:id/role', { preHandler: app.authorize('ceo') }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { role } = z.object({ role: z.enum(ROLES) }).parse(req.body);
+    const usuario = await get<{ id: string; role: string }>(`SELECT id, role FROM "User" WHERE id = ?`, [id]);
+    if (!usuario) throw notFound('Usuário não encontrado.');
+    if (usuario.role === 'ceo' && role !== 'ceo') {
+      const ceosAtivos = await get<{ n: number }>(`SELECT COUNT(*) AS n FROM "User" WHERE role = 'ceo' AND ativo = 1`, []);
+      if ((ceosAtivos?.n ?? 0) <= 1) throw badRequest('Nao e possivel rebaixar o unico CEO ativo do sistema.');
+    }
+    await run(`UPDATE "User" SET role = ?, updatedAt = ? WHERE id = ?`, [role, nowISO(), id]);
     return { ok: true };
   });
 }
