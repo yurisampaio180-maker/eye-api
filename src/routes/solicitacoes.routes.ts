@@ -265,13 +265,16 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
     return enriquecer(await getSolic(id));
   });
 
-  // -------- EDITAR (rascunho/reprovada) --------
+  // -------- EDITAR --------
+  // CEO: qualquer status. social: qualquer status (com auditoria pós-aprovação). demais: só rascunho/reprovada.
+  const ESTADOS_LIVRES: SolicitacaoStatus[] = ['rascunho', 'enviada', 'em_aprovacao', 'reprovada'];
+
   app.patch('/:id', async (req) => {
     const { id } = req.params as { id: string };
     const s = await getSolic(id);
     assertPodeVer(req.authUser, s);
     const podeEditarTudo = ['ceo', 'social'].includes(req.authUser.role);
-    if (!podeEditarTudo && !['rascunho', 'reprovada'].includes(s.status)) {
+    if (!podeEditarTudo && !ESTADOS_LIVRES.includes(s.status as SolicitacaoStatus)) {
       throw badRequest('Só dá para editar rascunho ou solicitação reprovada.');
     }
     const patch = createBody.partial().parse(req.body);
@@ -286,16 +289,27 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
       valores.push(nowISO(), id);
       await run(`UPDATE Solicitacao SET ${campos.join(', ')}, updatedAt = ? WHERE id = ?`, valores);
     }
+    // Notifica responsável quando social edita demanda já em produção
+    if (req.authUser.role === 'social' && !ESTADOS_LIVRES.includes(s.status as SolicitacaoStatus)) {
+      const tarefa = await get<{ responsavelId: string | null }>(`SELECT responsavelId FROM Tarefa WHERE solicitacaoId = ?`, [id]);
+      if (tarefa?.responsavelId) {
+        notificar({ titulo: 'Demanda em produção foi alterada', destinatarioId: tarefa.responsavelId, solicitacaoId: id, mensagem: `"${s.titulo}" foi editada pela Social Media. Confira as mudanças.` });
+      }
+    }
     return enriquecer(await getSolic(id));
   });
 
-  // -------- EXCLUIR (CEO ou social — social só pode excluir as próprias) --------
+  // -------- EXCLUIR (CEO ou social — social só pode excluir em ESTADOS_LIVRES) --------
   app.delete('/:id', { preHandler: app.authorize('ceo', 'social') }, async (req) => {
     const { id } = req.params as { id: string };
     const s = await getSolic(id);
     assertPodeVer(req.authUser, s);
     if (req.authUser.role === 'social' && s.solicitanteId !== req.authUser.id) {
       throw forbidden('Você só pode excluir solicitações que você criou.');
+    }
+    // Social só pode excluir antes da aprovação
+    if (req.authUser.role === 'social' && !ESTADOS_LIVRES.includes(s.status as SolicitacaoStatus)) {
+      throw forbidden('Demanda já em produção não pode ser excluída. Solicite ao CEO se necessário.');
     }
     if (['postada', 'cancelada'].includes(s.status)) {
       throw badRequest('Não é possível excluir uma solicitação já finalizada.');
