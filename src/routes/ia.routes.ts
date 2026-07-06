@@ -20,7 +20,7 @@ export async function iaRoutes(app: FastifyInstance) {
   app.post(
     '/gerar-imagem',
     {
-      preHandler: app.authorize('ceo', 'social', 'designer_governo'),
+      preHandler: app.authorize('ceo', 'social', 'designer_governo', 'gestor_cliente', 'cliente'),
       config: { rateLimit: { max: 8, timeWindow: '2 minutes' } },
     },
     async (req, reply) => {
@@ -50,6 +50,13 @@ export async function iaRoutes(app: FastifyInstance) {
           referenciaBuffer = Buffer.concat(chunks);
           referenciaMime = part.mimetype;
         }
+      }
+
+      // Secretarias só podem gerar imagens para o próprio cliente
+      const user = req.authUser;
+      if (user.role === 'gestor_cliente' || user.role === 'cliente') {
+        clienteId = user.clienteId ?? clienteId;
+        if (!clienteId) throw badRequest('Usuário sem cliente associado.');
       }
 
       if (!promptTecnico || promptTecnico.length < 10) {
