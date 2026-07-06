@@ -4,6 +4,7 @@ import { get, driver } from './db/database.ts';
 import { seedDatabase } from './db/seed.ts';
 import { sincronizarTodos, instagramConfigured } from './services/instagram.ts';
 import { executarTodosOsClientes } from './services/marketing-engine.service.ts';
+import { iniciarCronDisparo } from './jobs/disparo-postagem.ts';
 
 const app = await buildApp({ logger: true });
 
@@ -36,6 +37,9 @@ app
         sincronizarTodos().catch((e) => app.log.error(e, 'instagram:sync-cron erro'));
       }, SEIS_HORAS);
     }
+
+    // Disparo WhatsApp no horário da postagem (a cada 5 min)
+    iniciarCronDisparo();
 
     // Motor de marketing: verifica a cada hora se é dia 25, 09h (Fortaleza) → gera plano do mês seguinte
     // Usa TZ explícito para blindar contra servidor sem TZ=America/Fortaleza configurado

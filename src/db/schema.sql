@@ -232,3 +232,6 @@ CREATE TABLE IF NOT EXISTS GeracaoMarketing (
 );
 
 CREATE INDEX IF NOT EXISTS idx_geracao_cli ON GeracaoMarketing(clienteId);
+
+-- v5: disparo de notificação WhatsApp no horário da postagem
+ALTER TABLE EventoAgenda ADD COLUMN notificadoDisparo INTEGER NOT NULL DEFAULT 0;
