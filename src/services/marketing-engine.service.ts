@@ -161,6 +161,17 @@ export async function listarGeracoesAtivas(): Promise<GeracaoMarketing[]> {
   return all<GeracaoMarketing>(`SELECT * FROM GeracaoMarketing WHERE status = 'processando'`);
 }
 
+export async function contarConteudoIA(clienteId: string, mes: string): Promise<number> {
+  const [ano, mesNum] = mes.split('-').map(Number);
+  const inicio = new Date(ano, mesNum - 1, 1).toISOString();
+  const fim    = new Date(ano, mesNum, 1).toISOString();
+  const row = await get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM EventoAgenda WHERE clienteId = ? AND geradoPorIA = 1 AND dataHora >= ? AND dataHora < ?`,
+    [clienteId, inicio, fim],
+  );
+  return row?.n ?? 0;
+}
+
 export async function executarTodosOsClientes(): Promise<void> {
   const clientes = await all<{ id: string }>(`SELECT id FROM Cliente ORDER BY nome`);
   for (const { id } of clientes) {

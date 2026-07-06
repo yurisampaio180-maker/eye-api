@@ -6,6 +6,7 @@ import {
   buscarGeracao,
   listarGeracoes,
   listarGeracoesAtivas,
+  contarConteudoIA,
 } from '../services/marketing-engine.service.ts';
 
 export async function marketingEngineRoutes(app: FastifyInstance) {
@@ -21,6 +22,21 @@ export async function marketingEngineRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { clienteId } = req.params as { clienteId: string };
       const { mes } = req.query as { mes?: string };
+
+      // Calcula o mês alvo (mesmo cálculo de iniciarGeracao)
+      const mesAlvo = mes ?? (() => {
+        const d = new Date();
+        d.setMonth(d.getMonth() + 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      })();
+
+      // Guard: bloqueia geração duplicada se já há posts de IA para este mês
+      const jaExiste = await contarConteudoIA(clienteId, mesAlvo);
+      if (jaExiste > 0) {
+        return reply.code(409).send({
+          error: `Conteúdo de IA já gerado para ${mesAlvo} (${jaExiste} posts). Delete os posts gerados antes de regenerar.`,
+        });
+      }
 
       const geracaoId = await iniciarGeracao(clienteId, mes);
 
