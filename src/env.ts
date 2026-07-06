@@ -19,6 +19,10 @@ const schema = z.object({
   TAVILY_API_KEY: z.string().optional().default(''),
   SUPABASE_URL: z.string().optional().default(''),
   SUPABASE_SERVICE_KEY: z.string().optional().default(''),
+  CEO_WHATSAPP: z.string().optional().default(''),
+  WHATSAPP_META_TOKEN: z.string().optional().default(''),
+  WHATSAPP_PHONE_ID: z.string().optional().default(''),
+  CALLMEBOT_APIKEY: z.string().optional().default(''),
 });
 
 const parsed = schema.safeParse(process.env);

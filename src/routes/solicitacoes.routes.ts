@@ -8,6 +8,7 @@ import type { AuthUser } from '../auth/auth.plugin.ts';
 import { notificar } from '../services/notificacoes.ts';
 import { saveFile } from '../services/storage.ts';
 import { sugerirPromptArte, sugerirLegenda, sugerirRoteiro } from '../services/openai.ts';
+import { enviarWhatsAppCeo } from '../services/whatsapp.service.ts';
 
 interface SolicRow {
   id: string;
@@ -49,7 +50,12 @@ export async function getSolic(id: string): Promise<SolicRow> {
 /** isolamento multi-cliente: o solicitante só enxerga o que é dele. */
 export function assertPodeVer(user: AuthUser, s: SolicRow) {
   if (user.role === 'ceo') return;
-  if (['social', 'designer_governo', 'videomaker'].includes(user.role)) {
+  if (user.role === 'social') {
+    if (s.solicitanteId === user.id) return; // vê sempre as próprias
+    if (!VISIVEIS_EQUIPE.includes(s.status as SolicitacaoStatus)) throw forbidden();
+    return;
+  }
+  if (['designer_governo', 'videomaker'].includes(user.role)) {
     if (user.role === 'designer_governo' && s.clienteId !== 'governo-moraujo') throw forbidden();
     if (!VISIVEIS_EQUIPE.includes(s.status as SolicitacaoStatus)) throw forbidden();
     return;
@@ -154,7 +160,10 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
         `SELECT * FROM Solicitacao WHERE tipo = 'arte' AND clienteId = 'governo-moraujo' AND status IN (${visiveis}) ORDER BY createdAt DESC`
       );
     } else if (user.role === 'social') {
-      rows = await all<SolicRow>(`SELECT * FROM Solicitacao WHERE status IN (${visiveis}) ORDER BY createdAt DESC`);
+      rows = await all<SolicRow>(
+        `SELECT * FROM Solicitacao WHERE status IN (${visiveis}) OR solicitanteId = ? ORDER BY createdAt DESC`,
+        [user.id],
+      );
     } else if (user.role === 'videomaker') {
       // só vê vídeos atribuídos a ele ou ainda sem atribuição
       rows = await all<SolicRow>(
@@ -245,6 +254,13 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
     if (status === 'em_aprovacao') {
       notificar({ titulo: 'Nova solicitação para aprovação', destinatarioId: 'ceo', solicitacaoId: id, mensagem: body.titulo });
     }
+    // Quando social/CEO cria gravação com data, entra direto na agenda do CEO
+    if (body.tipo === 'video' && body.dataEvento && ['social', 'ceo'].includes(user.role)) {
+      await run(
+        `INSERT INTO EventoAgenda (id, clienteId, solicitacaoId, titulo, dataHora, plataforma, tipo, status, responsavelId, localEvento, createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [createId('ev'), clienteId, id, body.titulo, body.dataEvento, null, 'evento', 'agendado', null, body.localGravacao ?? null, now],
+      );
+    }
     reply.code(201);
     return enriquecer(await getSolic(id));
   });
@@ -254,7 +270,10 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const s = await getSolic(id);
     assertPodeVer(req.authUser, s);
-    if (!['rascunho', 'reprovada'].includes(s.status)) throw badRequest('Só dá para editar rascunho ou solicitação reprovada.');
+    const podeEditarTudo = ['ceo', 'social'].includes(req.authUser.role);
+    if (!podeEditarTudo && !['rascunho', 'reprovada'].includes(s.status)) {
+      throw badRequest('Só dá para editar rascunho ou solicitação reprovada.');
+    }
     const patch = createBody.partial().parse(req.body);
     const campos: string[] = [];
     const valores: unknown[] = [];
@@ -267,6 +286,21 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
       valores.push(nowISO(), id);
       await run(`UPDATE Solicitacao SET ${campos.join(', ')}, updatedAt = ? WHERE id = ?`, valores);
     }
+    return enriquecer(await getSolic(id));
+  });
+
+  // -------- EXCLUIR (CEO ou social — social só pode excluir as próprias) --------
+  app.delete('/:id', { preHandler: app.authorize('ceo', 'social') }, async (req) => {
+    const { id } = req.params as { id: string };
+    const s = await getSolic(id);
+    assertPodeVer(req.authUser, s);
+    if (req.authUser.role === 'social' && s.solicitanteId !== req.authUser.id) {
+      throw forbidden('Você só pode excluir solicitações que você criou.');
+    }
+    if (['postada', 'cancelada'].includes(s.status)) {
+      throw badRequest('Não é possível excluir uma solicitação já finalizada.');
+    }
+    await transicionar(s, 'cancelada', req.authUser.id, 'excluída pelo usuário');
     return enriquecer(await getSolic(id));
   });
 
@@ -413,6 +447,26 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
     else throw badRequest('A peça precisa estar confirmada pelo CEO antes de postar.');
     notificar({ titulo: 'Postado! 🎉', destinatarioId: s.solicitanteId, clienteId: s.clienteId, solicitacaoId: id, mensagem: s.titulo });
     return enriquecer(await getSolic(id));
+  });
+
+  // -------- LEMBRETE WHATSAPP (CEO ou social) --------
+  app.post('/:id/lembrete-whatsapp', { preHandler: app.authorize('ceo', 'social') }, async (req) => {
+    const { id } = req.params as { id: string };
+    const s = await getSolic(id);
+    assertPodeVer(req.authUser, s);
+    const clienteRow = await get<{ nome: string }>(`SELECT nome FROM Cliente WHERE id = ?`, [s.clienteId]);
+    const dataStr = s.dataEvento
+      ? new Date(s.dataEvento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : 'Data a confirmar';
+    const horaStr = s.horaEvento ? ` às ${s.horaEvento}` : '';
+    const localStr = s.localGravacao ? `\n📍 Local: ${s.localGravacao}` : '';
+    const msg =
+      `🎬 *Lembrete EYE Agência*\n\n` +
+      `Gravação agendada:\n*${s.titulo}*\n` +
+      `👥 Cliente: ${clienteRow?.nome ?? s.clienteId}\n` +
+      `📅 ${dataStr}${horaStr}${localStr}`;
+    const enviado = await enviarWhatsAppCeo(msg);
+    return { enviado };
   });
 
   // -------- ANEXOS --------
