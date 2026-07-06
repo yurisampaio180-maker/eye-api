@@ -103,6 +103,8 @@ export async function agendaRoutes(app: FastifyInstance) {
     plataforma: z.string().optional(),
     legenda: z.string().optional(),
     hashtags: z.string().optional(),
+    responsavelId: z.string().nullable().optional(),
+    localEvento: z.string().nullable().optional(),
   });
   app.patch('/:id', { preHandler: app.authorize('ceo', 'social', 'videomaker', 'designer_governo') }, async (req) => {
     const { id } = req.params as { id: string };
