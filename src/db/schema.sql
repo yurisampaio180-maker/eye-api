@@ -235,3 +235,7 @@ CREATE INDEX IF NOT EXISTS idx_geracao_cli ON GeracaoMarketing(clienteId);
 
 -- v5: disparo de notificação WhatsApp no horário da postagem
 ALTER TABLE EventoAgenda ADD COLUMN notificadoDisparo INTEGER NOT NULL DEFAULT 0;
+
+-- v6: entrega de vídeo por link externo (Google Drive / WeTransfer / Dropbox)
+ALTER TABLE Tarefa ADD COLUMN videoLink TEXT;
+ALTER TABLE Tarefa ADD COLUMN videoLinkTipo TEXT;

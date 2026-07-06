@@ -17,8 +17,19 @@ interface TarefaRow {
   prazoProducao: string | null;
   statusProducao: string;
   entregaUrl: string | null;
+  videoLink: string | null;
+  videoLinkTipo: string | null;
   promptSugerido: string | null;
   legendaSugerida: string | null;
+}
+
+const DOMINIOS_VIDEO_PERMITIDOS = ['drive.google.com', 'wetransfer.com', 'we.tl', 'dropbox.com'];
+
+function detectarTipoVideoLink(url: string): string {
+  if (url.includes('drive.google.com')) return 'google_drive';
+  if (url.includes('wetransfer.com') || url.includes('we.tl')) return 'wetransfer';
+  if (url.includes('dropbox.com')) return 'dropbox';
+  return 'outro';
 }
 
 /**
@@ -104,6 +115,32 @@ export async function tarefasRoutes(app: FastifyInstance) {
     if (body.responsavelId) {
       notificar({ titulo: 'Tarefa atribuída a você', destinatarioId: body.responsavelId, solicitacaoId: t.solicitacaoId, mensagem: t.titulo });
     }
+    return enriquecer((await get<TarefaRow>(`SELECT * FROM Tarefa WHERE id = ?`, [id]))!);
+  });
+
+  // ENTREGA POR LINK EXTERNO (vídeos — Google Drive / WeTransfer / Dropbox)
+  app.post('/:id/entrega-link', { preHandler: app.authorize('ceo', 'videomaker') }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { videoLink } = z.object({ videoLink: z.string().url('URL inválida.') }).parse(req.body ?? {});
+
+    let urlObj: URL;
+    try { urlObj = new URL(videoLink); } catch { throw badRequest('URL inválida.'); }
+    const dominioOk = DOMINIOS_VIDEO_PERMITIDOS.some(
+      (d) => urlObj.hostname === d || urlObj.hostname.endsWith(`.${d}`)
+    );
+    if (!dominioOk) throw badRequest('Link não permitido. Use Google Drive, WeTransfer ou Dropbox.');
+
+    const t = await get<TarefaRow>(`SELECT * FROM Tarefa WHERE id = ?`, [id]);
+    if (!t) throw notFound('Tarefa não encontrada.');
+
+    const tipo = detectarTipoVideoLink(videoLink);
+    await run(
+      `UPDATE Tarefa SET videoLink = ?, videoLinkTipo = ?, statusProducao = 'pronto', updatedAt = ? WHERE id = ?`,
+      [videoLink, tipo, nowISO(), id],
+    );
+    const s = await getSolic(t.solicitacaoId);
+    await avancarProducao(s, 'aguardando_confirmacao', req.authUser.id);
+    notificar({ titulo: 'Vídeo entregue — aguardando confirmação', destinatarioId: 'ceo', solicitacaoId: s.id, mensagem: t.titulo });
     return enriquecer((await get<TarefaRow>(`SELECT * FROM Tarefa WHERE id = ?`, [id]))!);
   });
 
