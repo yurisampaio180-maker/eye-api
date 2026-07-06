@@ -1,6 +1,7 @@
 import { all, get, run, nowISO } from '../db/database.ts';
 import { env } from '../env.ts';
 import { createId } from '../lib/id.ts';
+import { enviarWhatsAppCeo } from './whatsapp.service.ts';
 
 const META = 'https://graph.facebook.com/v19.0';
 const IG   = 'https://graph.instagram.com/v19.0';
@@ -126,17 +127,54 @@ export async function sincronizarMetricas(clienteId: string): Promise<void> {
   await run('UPDATE InstagramConexao SET ultimaSincEm = ? WHERE clienteId = ?', [nowISO(), clienteId]);
 }
 
+async function renovarTokenSeNecessario(conn: {
+  clienteId: string;
+  username: string;
+  accessToken: string;
+  tokenExpiraEm: string;
+}): Promise<void> {
+  const dias = (new Date(conn.tokenExpiraEm).getTime() - Date.now()) / 86_400_000;
+  if (dias > 15) return; // ainda válido, não mexer
+
+  console.log(`[instagram] renovando token de ${conn.username} (${Math.floor(dias)} dias restantes)`);
+  try {
+    const res = await fetch(
+      `${META}/oauth/access_token?` +
+        new URLSearchParams({
+          grant_type:        'fb_exchange_token',
+          client_id:         env.META_APP_ID,
+          client_secret:     env.META_APP_SECRET,
+          fb_exchange_token: conn.accessToken,
+        }),
+    );
+    if (!res.ok) throw new Error(await res.text());
+    const { access_token: novoToken } = (await res.json()) as any;
+    const novaExpiracao = new Date(Date.now() + 55 * 86_400_000).toISOString();
+    await run(
+      `UPDATE InstagramConexao SET accessToken = ?, tokenExpiraEm = ? WHERE clienteId = ?`,
+      [novoToken, novaExpiracao, conn.clienteId],
+    );
+    console.log(`[instagram] token renovado: ${conn.username}`);
+  } catch (err: any) {
+    console.error(`[instagram] falha ao renovar token de ${conn.username}:`, err.message);
+    await enviarWhatsAppCeo(
+      `⚠️ *EYE Agência — Instagram*\n` +
+        `O token do Instagram de *@${conn.username}* expira em ${Math.floor(dias)} dia(s) e não pôde ser renovado automaticamente.\n\n` +
+        `Acesse o sistema → perfil do cliente → "Autorizar Instagram" para reconectar.`,
+    ).catch(() => {});
+  }
+}
+
 export async function sincronizarTodos(): Promise<void> {
-  const conexoes = await all<{ clienteId: string; tokenExpiraEm: string }>(
-    'SELECT clienteId, tokenExpiraEm FROM InstagramConexao'
+  const conexoes = await all<{ clienteId: string; username: string; accessToken: string; tokenExpiraEm: string }>(
+    'SELECT clienteId, username, accessToken, tokenExpiraEm FROM InstagramConexao',
   );
   for (const c of conexoes) {
-    const dias = (new Date(c.tokenExpiraEm).getTime() - Date.now()) / 86_400_000;
-    if (dias < 10) {
-      console.warn(`[instagram] token do cliente ${c.clienteId} expira em ${Math.floor(dias)} dias — reconectar!`);
-    }
+    await renovarTokenSeNecessario(c).catch((e) =>
+      console.error(`[instagram] renovacao ${c.clienteId}:`, e.message),
+    );
     await sincronizarMetricas(c.clienteId).catch((e) =>
-      console.error(`[instagram] sync ${c.clienteId}:`, e.message)
+      console.error(`[instagram] sync ${c.clienteId}:`, e.message),
     );
   }
 }
