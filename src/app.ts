@@ -19,6 +19,7 @@ import { agendaRoutes } from './routes/agenda.routes.ts';
 import { iaRoutes } from './routes/ia.routes.ts';
 import { instagramRoutes } from './routes/instagram.routes.ts';
 import { marketingEngineRoutes } from './routes/marketing-engine.routes.ts';
+import { assetsRoutes } from './routes/assets.routes.ts';
 
 export async function buildApp(opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
   await applySchema();
@@ -53,6 +54,7 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   await app.register(iaRoutes, { prefix: '/api/v1/ia' });
   await app.register(instagramRoutes, { prefix: '/api/v1/instagram' });
   await app.register(marketingEngineRoutes, { prefix: '/api/v1/motor' });
+  await app.register(assetsRoutes, { prefix: '/api/v1' });
   await app.register(miscRoutes, { prefix: '/api/v1' });
 
   return app;

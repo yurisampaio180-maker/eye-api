@@ -239,3 +239,14 @@ ALTER TABLE EventoAgenda ADD COLUMN notificadoDisparo INTEGER NOT NULL DEFAULT 0
 -- v6: entrega de vídeo por link externo (Google Drive / WeTransfer / Dropbox)
 ALTER TABLE Tarefa ADD COLUMN videoLink TEXT;
 ALTER TABLE Tarefa ADD COLUMN videoLinkTipo TEXT;
+
+-- v7: assets de identidade visual do cliente (logos + referências para a IA)
+CREATE TABLE IF NOT EXISTS ClienteAsset (
+  id        TEXT PRIMARY KEY,
+  clienteId TEXT NOT NULL REFERENCES Cliente(id) ON DELETE CASCADE,
+  tipo      TEXT NOT NULL,  -- 'logo' | 'referencia'
+  url       TEXT NOT NULL,
+  nome      TEXT,
+  createdAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_asset_cliente ON ClienteAsset(clienteId, tipo);

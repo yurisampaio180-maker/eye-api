@@ -45,6 +45,29 @@ export async function iniciarGeracao(clienteId: string, mes?: string): Promise<s
   return id;
 }
 
+async function carregarAssetsComoBuffers(clienteId: string): Promise<Array<{ buffer: Buffer; mime: string; tipo: string }>> {
+  const rows = await all<{ url: string; tipo: string }>(
+    `SELECT url, tipo FROM ClienteAsset WHERE clienteId = ? ORDER BY tipo, createdAt`,
+    [clienteId],
+  );
+  const buffers: Array<{ buffer: Buffer; mime: string; tipo: string }> = [];
+  for (const row of rows) {
+    if (row.url.startsWith('data:')) {
+      const m = row.url.match(/^data:(image\/\w+);base64,(.+)$/);
+      if (m) buffers.push({ buffer: Buffer.from(m[2], 'base64'), mime: m[1], tipo: row.tipo });
+    } else if (row.url.startsWith('http')) {
+      try {
+        const resp = await fetch(row.url);
+        const mime = resp.headers.get('content-type') ?? 'image/png';
+        buffers.push({ buffer: Buffer.from(await resp.arrayBuffer()), mime, tipo: row.tipo });
+      } catch {
+        console.warn(`[motor] asset indisponível: ${row.url}`);
+      }
+    }
+  }
+  return buffers;
+}
+
 export async function executarGeracaoCompleta(clienteId: string, geracaoId: string): Promise<void> {
   try {
     const geracao = await get<GeracaoMarketing>(`SELECT * FROM GeracaoMarketing WHERE id = ?`, [geracaoId]);
@@ -68,7 +91,10 @@ export async function executarGeracaoCompleta(clienteId: string, geracaoId: stri
       proibicoes: JSON.parse(dnaRow?.proibicoesJson ?? '[]'),
     };
 
-    const tendencias = await buscarTendencias(clienteId, cliente.segmento, mes);
+    const [tendencias, assets] = await Promise.all([
+      buscarTendencias(clienteId, cliente.segmento, mes),
+      carregarAssetsComoBuffers(clienteId),
+    ]);
     const plano = await gerarPlanoMensal(clienteId, tendencias, mes);
 
     await run(`UPDATE GeracaoMarketing SET totalItens = ? WHERE id = ?`, [plano.length, geracaoId]);
@@ -85,7 +111,7 @@ export async function executarGeracaoCompleta(clienteId: string, geracaoId: stri
         if (item.tipo === 'arte') {
           try {
             const { promptFinal } = montarPromptProfissional({ item, dna });
-            const { b64 } = await gerarImagem({ promptTecnico: promptFinal, formato: item.formato });
+            const { b64 } = await gerarImagem({ promptTecnico: promptFinal, formato: item.formato, assets });
             imagemUrl = await salvarImagemGerada(b64, clienteId);
           } catch (e: any) {
             console.warn(`[motor] arte falhou para "${item.titulo}": ${e.message}`);

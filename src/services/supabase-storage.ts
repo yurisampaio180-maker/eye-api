@@ -16,6 +16,43 @@ function getClient() {
 }
 
 /**
+ * Salva um asset de identidade visual (logo/referência) do cliente.
+ * Mesmo esquema de fallback que salvarImagemGerada.
+ */
+export async function salvarAsset(
+  buffer: Buffer,
+  mimeType: string,
+  clienteId: string,
+  tipo: 'logo' | 'referencia',
+  nomeOriginal: string,
+): Promise<string> {
+  const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/jpeg' ? 'jpg' : 'webp';
+  const filename = `${createId('asset')}.${ext}`;
+
+  if (env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY) {
+    try {
+      const path = `assets/${clienteId}/${tipo}/${filename}`;
+      const sb = getClient();
+      const { error } = await sb.storage.from(BUCKET).upload(path, buffer, {
+        contentType: mimeType,
+        cacheControl: '31536000',
+        upsert: false,
+      });
+      if (!error) return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+      console.warn('[storage] asset upload falhou, usando base64:', error.message);
+    } catch (err: any) {
+      console.warn('[storage] Supabase indisponível para asset:', err.message);
+    }
+    return `data:${mimeType};base64,${buffer.toString('base64')}`;
+  }
+
+  const dir = join(process.cwd(), env.UPLOAD_DIR, 'assets', clienteId, tipo);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, filename), buffer);
+  return `/uploads/assets/${clienteId}/${tipo}/${filename}`;
+}
+
+/**
  * Salva uma imagem WebP gerada por IA com três níveis de fallback:
  *   1. Supabase Storage (produção) → URL absoluta permanente
  *   2. Disco local (dev sem Supabase) → path relativo /uploads/geradas/...

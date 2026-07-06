@@ -24,12 +24,12 @@ export async function gerarImagem(opts: {
   formato: string;
   referenciaBuffer?: Buffer;
   referenciaMime?: string;
+  assets?: Array<{ buffer: Buffer; mime: string; tipo: string }>;
 }): Promise<{ b64: string }> {
   if (!openai) throw new Error('OPENAI_API_KEY não configurada no servidor.');
 
   const size = SIZES[opts.formato] ?? '1024x1024';
 
-  // Prefixo e sufixo de qualidade profissional — encapsulam o prompt técnico
   const promptFinal = [
     'Professional marketing design, advertising agency quality, Instagram-ready, brand-consistent.',
     opts.promptTecnico,
@@ -37,14 +37,45 @@ export async function gerarImagem(opts: {
   ].join('\n\n');
 
   try {
+    // Montar array de imagens de entrada: logo + referências + ref avulsa
+    const imagensEntrada: Awaited<ReturnType<typeof toFile>>[] = [];
+    const logosAnexados: boolean[] = [];
+
+    if (opts.assets && opts.assets.length > 0) {
+      const logos = opts.assets.filter((a) => a.tipo === 'logo').slice(0, 1);
+      const refs  = opts.assets.filter((a) => a.tipo === 'referencia').slice(0, 3);
+      for (const logo of logos) {
+        imagensEntrada.push(await toFile(logo.buffer, 'logo.png', { type: logo.mime }));
+        logosAnexados.push(true);
+      }
+      for (const ref of refs) {
+        const ext = ref.mime === 'image/png' ? 'png' : 'jpg';
+        imagensEntrada.push(await toFile(ref.buffer, `ref.${ext}`, { type: ref.mime }));
+      }
+    }
     if (opts.referenciaBuffer) {
-      const imagemFile = await toFile(opts.referenciaBuffer, 'referencia.webp', {
-        type: opts.referenciaMime ?? 'image/webp',
-      });
+      imagensEntrada.push(await toFile(opts.referenciaBuffer, 'referencia.webp', { type: opts.referenciaMime ?? 'image/webp' }));
+    }
+
+    // Instruções adicionais sobre as imagens anexadas
+    const instrucaoAssets = imagensEntrada.length > 0
+      ? [
+          logosAnexados.length > 0
+            ? '\nBRAND LOGO: The FIRST attached image is the official brand logo. Place it EXACTLY as provided — same colors, same proportions, no redrawing. Position: lower area, ~8% canvas width.'
+            : '',
+          imagensEntrada.length > logosAnexados.length
+            ? `\nSTYLE REFERENCES: The remaining ${imagensEntrada.length - logosAnexados.length} attached image(s) are approved brand artworks. Match their visual style, color grading, typography weight and overall quality.`
+            : '',
+        ].join('')
+      : '';
+
+    const promptComAssets = promptFinal + instrucaoAssets;
+
+    if (imagensEntrada.length > 0) {
       const res = await (openai.images as any).edit({
         model: 'gpt-image-1',
-        image: imagemFile,
-        prompt: promptFinal,
+        image: imagensEntrada.length === 1 ? imagensEntrada[0] : imagensEntrada,
+        prompt: promptComAssets,
         size,
         quality: 'high',
         n: 1,
@@ -54,7 +85,7 @@ export async function gerarImagem(opts: {
 
     const res = await (openai.images as any).generate({
       model: 'gpt-image-1',
-      prompt: promptFinal,
+      prompt: promptComAssets,
       size,
       quality: 'high',
       n: 1,

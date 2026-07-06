@@ -202,7 +202,17 @@ export async function agendaRoutes(app: FastifyInstance) {
     };
 
     const { promptFinal } = montarPromptProfissional({ item, dna });
-    const { b64 } = await gerarImagem({ promptTecnico: promptFinal, formato: item.formato });
+    const assetsRows = await all<{ url: string; tipo: string }>(`SELECT url, tipo FROM ClienteAsset WHERE clienteId = ? ORDER BY tipo, createdAt`, [ev.clienteId]);
+    const assets: Array<{ buffer: Buffer; mime: string; tipo: string }> = [];
+    for (const a of assetsRows) {
+      if (a.url.startsWith('data:')) {
+        const m = a.url.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (m) assets.push({ buffer: Buffer.from(m[2], 'base64'), mime: m[1], tipo: a.tipo });
+      } else if (a.url.startsWith('http')) {
+        try { assets.push({ buffer: Buffer.from(await (await fetch(a.url)).arrayBuffer()), mime: 'image/png', tipo: a.tipo }); } catch { /* skip */ }
+      }
+    }
+    const { b64 } = await gerarImagem({ promptTecnico: promptFinal, formato: item.formato, assets: assets.length > 0 ? assets : undefined });
     const imagemUrl = await salvarImagemGerada(b64, ev.clienteId);
 
     await run(`UPDATE EventoAgenda SET imagemUrl = ? WHERE id = ?`, [imagemUrl, id]);
