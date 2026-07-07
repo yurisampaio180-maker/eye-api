@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { gerarImagem, openaiConfigured } from '../services/openai.ts';
 import { salvarImagemGerada } from '../services/supabase-storage.ts';
-import { buscarAssetsParaGeracao } from '../services/assets.service.ts';
+import { buscarAssetsParaGeracao, logoAusente } from '../services/assets.service.ts';
+import { get } from '../db/database.ts';
 import { badRequest } from '../lib/errors.ts';
 
 export async function iaRoutes(app: FastifyInstance) {
@@ -65,7 +66,13 @@ export async function iaRoutes(app: FastifyInstance) {
       }
 
       // Banco de imagens do cliente: logo + referências curadas/aprovadas
-      const { buffers } = clienteId ? await buscarAssetsParaGeracao(clienteId) : { buffers: [] };
+      const { temLogo, buffers } = clienteId ? await buscarAssetsParaGeracao(clienteId) : { temLogo: false, buffers: [] };
+
+      // Logo obrigatória: cliente cadastrado sem logo não gera (fluxo guiado no frontend)
+      if (clienteId && !temLogo) {
+        const clienteReal = await get<{ id: string }>(`SELECT id FROM Cliente WHERE id = ?`, [clienteId]);
+        if (clienteReal) throw logoAusente(clienteId);
+      }
 
       // Chamar OpenAI (pode levar 10-30s) — erros já mapeados em openai.errors.ts
       req.log.info({ clienteId, formato, temReferencia: !!referenciaBuffer, assetsBanco: buffers.length }, 'ia:gerar-imagem inicio');

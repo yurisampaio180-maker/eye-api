@@ -72,6 +72,8 @@ const CAMEL = [
   'coletadoEm', 'alcanceSemana', 'impressoesSem', 'visitasPerfil', 'totalPosts',
   // v4 motor
   'geradoPorIA', 'totalItens', 'itensGerados', 'concluidoEm',
+  // v8 banco de imagens
+  'temLogo',
 ];
 const LC2CAMEL: Record<string, string> = Object.fromEntries(CAMEL.map((c) => [c.toLowerCase(), c]));
 

@@ -7,7 +7,7 @@ import { notificar } from '../services/notificacoes.ts';
 import { gerarImagem } from '../services/openai.ts';
 import { montarPromptProfissional, type DNAInput } from '../services/art-prompt-builder.ts';
 import { salvarImagemGerada } from '../services/supabase-storage.ts';
-import { buscarAssetsParaGeracao, registrarReferenciaAprovada } from '../services/assets.service.ts';
+import { buscarAssetsParaGeracao, registrarReferenciaAprovada, logoAusente } from '../services/assets.service.ts';
 
 interface EventoRow {
   id: string;
@@ -209,7 +209,8 @@ export async function agendaRoutes(app: FastifyInstance) {
     };
 
     const { promptFinal } = montarPromptProfissional({ item, dna });
-    const { buffers } = await buscarAssetsParaGeracao(ev.clienteId);
+    const { temLogo, buffers } = await buscarAssetsParaGeracao(ev.clienteId);
+    if (!temLogo) throw logoAusente(ev.clienteId);
     const { b64 } = await gerarImagem({ promptTecnico: promptFinal, formato: item.formato, assets: buffers.length > 0 ? buffers : undefined });
     const imagemUrl = await salvarImagemGerada(b64, ev.clienteId);
 

@@ -6,12 +6,13 @@ export async function miscRoutes(app: FastifyInstance) {
   app.addHook('preHandler', app.authenticate);
 
   // ---- Clientes ----
+  const SELECT_CLIENTE = `SELECT c.*, EXISTS(SELECT 1 FROM ClienteAsset a WHERE a.clienteId = c.id AND a.tipo = 'logo') AS temLogo FROM Cliente c`;
   app.get('/clientes', async (req) => {
     const u = req.authUser;
     if (u.role === 'ceo' || ['social', 'designer_governo', 'videomaker'].includes(u.role)) {
-      return all(`SELECT * FROM Cliente ORDER BY nome`);
+      return all(`${SELECT_CLIENTE} ORDER BY c.nome`);
     }
-    return all(`SELECT * FROM Cliente WHERE id = ?`, [u.clienteId]);
+    return all(`${SELECT_CLIENTE} WHERE c.id = ?`, [u.clienteId]);
   });
 
   app.get('/clientes/:id/unidades', async (req) => {

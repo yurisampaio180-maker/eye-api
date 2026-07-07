@@ -69,10 +69,13 @@ export async function executarGeracaoCompleta(clienteId: string, geracaoId: stri
       proibicoes: JSON.parse(dnaRow?.proibicoesJson ?? '[]'),
     };
 
-    const [tendencias, { buffers: assets }] = await Promise.all([
+    const [tendencias, { temLogo, buffers: assets }] = await Promise.all([
       buscarTendencias(clienteId, cliente.segmento, mes),
       buscarAssetsParaGeracao(clienteId),
     ]);
+    if (!temLogo) {
+      throw new Error(`Cliente ${cliente.nome} sem logomarca cadastrada — envie o PNG da logo no Banco de Imagens antes de gerar o mês.`);
+    }
     const plano = await gerarPlanoMensal(clienteId, tendencias, mes);
 
     await run(`UPDATE GeracaoMarketing SET totalItens = ? WHERE id = ?`, [plano.length, geracaoId]);
