@@ -7,6 +7,7 @@ import { notificar } from '../services/notificacoes.ts';
 import { gerarImagem } from '../services/openai.ts';
 import { montarPromptProfissional, type DNAInput } from '../services/art-prompt-builder.ts';
 import { salvarImagemGerada } from '../services/supabase-storage.ts';
+import { buscarAssetsParaGeracao, registrarReferenciaAprovada } from '../services/assets.service.ts';
 
 interface EventoRow {
   id: string;
@@ -126,6 +127,10 @@ export async function agendaRoutes(app: FastifyInstance) {
     await run(`UPDATE EventoAgenda SET status = 'confirmado' WHERE id = ?`, [id]);
     notificar({ titulo: 'Post confirmado — pode postar ✅', destinatarioId: 'eduarda', clienteId: ev.clienteId, mensagem: ev.titulo });
     if (ev.criadoPorId) notificar({ titulo: 'Seu post foi confirmado pelo CEO', destinatarioId: ev.criadoPorId, mensagem: ev.titulo });
+    // Banco auto-alimentado: arte aprovada vira referência para as próximas gerações
+    if (ev.imagemUrl && ev.tipo === 'post') {
+      await registrarReferenciaAprovada(ev.clienteId, ev.imagemUrl, ev.titulo);
+    }
     return enriquecer((await byId(id))!);
   });
 
@@ -204,17 +209,8 @@ export async function agendaRoutes(app: FastifyInstance) {
     };
 
     const { promptFinal } = montarPromptProfissional({ item, dna });
-    const assetsRows = await all<{ url: string; tipo: string }>(`SELECT url, tipo FROM ClienteAsset WHERE clienteId = ? ORDER BY tipo, createdAt`, [ev.clienteId]);
-    const assets: Array<{ buffer: Buffer; mime: string; tipo: string }> = [];
-    for (const a of assetsRows) {
-      if (a.url.startsWith('data:')) {
-        const m = a.url.match(/^data:(image\/\w+);base64,(.+)$/);
-        if (m) assets.push({ buffer: Buffer.from(m[2], 'base64'), mime: m[1], tipo: a.tipo });
-      } else if (a.url.startsWith('http')) {
-        try { assets.push({ buffer: Buffer.from(await (await fetch(a.url)).arrayBuffer()), mime: 'image/png', tipo: a.tipo }); } catch { /* skip */ }
-      }
-    }
-    const { b64 } = await gerarImagem({ promptTecnico: promptFinal, formato: item.formato, assets: assets.length > 0 ? assets : undefined });
+    const { buffers } = await buscarAssetsParaGeracao(ev.clienteId);
+    const { b64 } = await gerarImagem({ promptTecnico: promptFinal, formato: item.formato, assets: buffers.length > 0 ? buffers : undefined });
     const imagemUrl = await salvarImagemGerada(b64, ev.clienteId);
 
     await run(`UPDATE EventoAgenda SET imagemUrl = ? WHERE id = ?`, [imagemUrl, id]);

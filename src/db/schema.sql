@@ -250,3 +250,7 @@ CREATE TABLE IF NOT EXISTS ClienteAsset (
   createdAt TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_asset_cliente ON ClienteAsset(clienteId, tipo);
+
+-- v8: banco de imagens auto-alimentado (origem da referência + contador de usos)
+ALTER TABLE ClienteAsset ADD COLUMN origem TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE ClienteAsset ADD COLUMN usos INTEGER NOT NULL DEFAULT 0;

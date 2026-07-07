@@ -6,6 +6,7 @@ import { montarPromptProfissional, type DNAInput } from './art-prompt-builder.ts
 import { gerarImagem } from './openai.ts';
 import { gerarRoteiro } from './script.service.ts';
 import { salvarImagemGerada } from './supabase-storage.ts';
+import { buscarAssetsParaGeracao } from './assets.service.ts';
 
 export interface GeracaoMarketing {
   id: string;
@@ -45,29 +46,6 @@ export async function iniciarGeracao(clienteId: string, mes?: string): Promise<s
   return id;
 }
 
-async function carregarAssetsComoBuffers(clienteId: string): Promise<Array<{ buffer: Buffer; mime: string; tipo: string }>> {
-  const rows = await all<{ url: string; tipo: string }>(
-    `SELECT url, tipo FROM ClienteAsset WHERE clienteId = ? ORDER BY tipo, createdAt`,
-    [clienteId],
-  );
-  const buffers: Array<{ buffer: Buffer; mime: string; tipo: string }> = [];
-  for (const row of rows) {
-    if (row.url.startsWith('data:')) {
-      const m = row.url.match(/^data:(image\/\w+);base64,(.+)$/);
-      if (m) buffers.push({ buffer: Buffer.from(m[2], 'base64'), mime: m[1], tipo: row.tipo });
-    } else if (row.url.startsWith('http')) {
-      try {
-        const resp = await fetch(row.url);
-        const mime = resp.headers.get('content-type') ?? 'image/png';
-        buffers.push({ buffer: Buffer.from(await resp.arrayBuffer()), mime, tipo: row.tipo });
-      } catch {
-        console.warn(`[motor] asset indisponível: ${row.url}`);
-      }
-    }
-  }
-  return buffers;
-}
-
 export async function executarGeracaoCompleta(clienteId: string, geracaoId: string): Promise<void> {
   try {
     const geracao = await get<GeracaoMarketing>(`SELECT * FROM GeracaoMarketing WHERE id = ?`, [geracaoId]);
@@ -91,9 +69,9 @@ export async function executarGeracaoCompleta(clienteId: string, geracaoId: stri
       proibicoes: JSON.parse(dnaRow?.proibicoesJson ?? '[]'),
     };
 
-    const [tendencias, assets] = await Promise.all([
+    const [tendencias, { buffers: assets }] = await Promise.all([
       buscarTendencias(clienteId, cliente.segmento, mes),
-      carregarAssetsComoBuffers(clienteId),
+      buscarAssetsParaGeracao(clienteId),
     ]);
     const plano = await gerarPlanoMensal(clienteId, tendencias, mes);
 

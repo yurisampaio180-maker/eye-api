@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { gerarImagem, openaiConfigured } from '../services/openai.ts';
 import { salvarImagemGerada } from '../services/supabase-storage.ts';
+import { buscarAssetsParaGeracao } from '../services/assets.service.ts';
 import { badRequest } from '../lib/errors.ts';
 
 export async function iaRoutes(app: FastifyInstance) {
@@ -63,13 +64,17 @@ export async function iaRoutes(app: FastifyInstance) {
         throw badRequest('promptTecnico ausente ou muito curto.');
       }
 
+      // Banco de imagens do cliente: logo + referências curadas/aprovadas
+      const { buffers } = clienteId ? await buscarAssetsParaGeracao(clienteId) : { buffers: [] };
+
       // Chamar OpenAI (pode levar 10-30s) — erros já mapeados em openai.errors.ts
-      req.log.info({ clienteId, formato, temReferencia: !!referenciaBuffer }, 'ia:gerar-imagem inicio');
+      req.log.info({ clienteId, formato, temReferencia: !!referenciaBuffer, assetsBanco: buffers.length }, 'ia:gerar-imagem inicio');
       const resultado = await gerarImagem({
         promptTecnico,
         formato,
         referenciaBuffer,
         referenciaMime,
+        assets: buffers.length > 0 ? buffers : undefined,
       });
       req.log.info({ clienteId }, 'ia:gerar-imagem concluido');
 

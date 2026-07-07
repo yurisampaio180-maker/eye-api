@@ -53,11 +53,11 @@ export async function assetsRoutes(app: FastifyInstance) {
       const id = createId('ast');
       const now = nowISO();
       await run(
-        `INSERT INTO ClienteAsset (id, clienteId, tipo, url, nome, createdAt) VALUES (?,?,?,?,?,?)`,
-        [id, clienteId, tipo, url, nome || fileOriginalName, now],
+        `INSERT INTO ClienteAsset (id, clienteId, tipo, origem, url, nome, createdAt) VALUES (?,?,?,?,?,?,?)`,
+        [id, clienteId, tipo, 'manual', url, nome || fileOriginalName, now],
       );
       reply.code(201);
-      return { id, clienteId, tipo, url, nome: nome || fileOriginalName, createdAt: now };
+      return { id, clienteId, tipo, origem: 'manual', url, nome: nome || fileOriginalName, usos: 0, createdAt: now };
     },
   );
 

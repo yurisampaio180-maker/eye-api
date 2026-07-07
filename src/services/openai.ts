@@ -60,11 +60,12 @@ export async function gerarImagem(opts: {
     // Instruções adicionais sobre as imagens anexadas
     const instrucaoAssets = imagensEntrada.length > 0
       ? [
+          '\n\n-- ATTACHED IMAGES INSTRUCTIONS --',
           logosAnexados.length > 0
-            ? '\nBRAND LOGO: The FIRST attached image is the official brand logo. Place it EXACTLY as provided — same colors, same proportions, no redrawing. Position: lower area, ~8% canvas width.'
+            ? '\nIMAGE 1 is the OFFICIAL BRAND LOGO. Rules: place it exactly as provided, identical colors and proportions, never redraw or reinterpret it. Position: bottom area, ~8% of canvas width, on a clean background zone.'
             : '',
           imagensEntrada.length > logosAnexados.length
-            ? `\nSTYLE REFERENCES: The remaining ${imagensEntrada.length - logosAnexados.length} attached image(s) are approved brand artworks. Match their visual style, color grading, typography weight and overall quality.`
+            ? `\nIMAGES ${logosAnexados.length + 1}-${imagensEntrada.length} are APPROVED brand artworks. The new art MUST look like it belongs to the same campaign: same typography treatment, same color grading, same composition philosophy, same decorative elements style (waveforms, hand-drawn hearts, texture overlays — whatever appears in the references). Match their quality level.`
             : '',
         ].join('')
       : '';
