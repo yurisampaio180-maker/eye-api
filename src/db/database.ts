@@ -149,7 +149,17 @@ export async function exec(sql: string): Promise<void> {
     }
     return;
   }
-  sqlite().exec(sql);
+  // SQLite: statement a statement com a MESMA idempotência do PG — um exec()
+  // monolítico para no primeiro "duplicate column" e deixa o schema parcial.
+  const db = sqlite();
+  for (const stmt of sql.split(';').map((s) => s.trim()).filter(Boolean)) {
+    try {
+      db.exec(stmt);
+    } catch (e: any) {
+      if (/already exists|duplicate column/i.test(String(e?.message))) continue;
+      throw e;
+    }
+  }
 }
 
 function splitStatements(sql: string): string[] {
