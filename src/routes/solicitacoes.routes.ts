@@ -196,6 +196,7 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
 
   // -------- CRIAR --------
   const createBody = z.object({
+    clienteId: z.string().optional(),
     tipo: z.enum(['arte', 'video']),
     titulo: z.string().min(2),
     descricao: z.string().default(''),
@@ -225,8 +226,18 @@ export async function solicitacoesRoutes(app: FastifyInstance) {
       throw badRequest('Para solicitações de vídeo, informe a data e o horário do evento.');
     }
     const user = req.authUser;
-    const clienteId = user.role === 'ceo' || user.role === 'social' ? (req.body as any).clienteId : user.clienteId;
-    if (!clienteId) throw badRequest('Informe o cliente da solicitação.');
+    // Secretarias: SEMPRE o cliente vinculado ao usuário (ignora o body).
+    // Papéis internos (ceo/social): clienteId do body é OBRIGATÓRIO e precisa existir.
+    let clienteId: string;
+    if (user.role === 'ceo' || user.role === 'social') {
+      if (!body.clienteId) throw badRequest('Selecione o cliente desta demanda.', { campo: 'clienteId' });
+      const cliente = await get<{ id: string }>(`SELECT id FROM Cliente WHERE id = ?`, [body.clienteId]);
+      if (!cliente) throw badRequest('Cliente não encontrado.', { campo: 'clienteId' });
+      clienteId = cliente.id;
+    } else {
+      if (!user.clienteId) throw badRequest('Usuário sem cliente vinculado.');
+      clienteId = user.clienteId;
+    }
     const unidadeId = body.unidadeId ?? user.unidadeId ?? null;
     const id = createId('s');
     const now = nowISO();
