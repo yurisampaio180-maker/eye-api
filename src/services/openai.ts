@@ -73,6 +73,8 @@ export async function gerarImagem(opts: {
     const promptComAssets = promptFinal + instrucaoAssets;
 
     if (imagensEntrada.length > 0) {
+      const nLogos = logosAnexados.length;
+      console.log(`[ArtService] images.edit — ${imagensEntrada.length} imagens anexadas (${nLogos} logo + ${imagensEntrada.length - nLogos} referencias)`);
       const res = await (openai.images as any).edit({
         model: 'gpt-image-1',
         image: imagensEntrada.length === 1 ? imagensEntrada[0] : imagensEntrada,
@@ -84,6 +86,7 @@ export async function gerarImagem(opts: {
       return { b64: res.data[0].b64_json as string };
     }
 
+    console.log('[ArtService] images.generate — SEM imagens anexadas (nenhum asset/logo no banco deste cliente)');
     const res = await (openai.images as any).generate({
       model: 'gpt-image-1',
       prompt: promptComAssets,
